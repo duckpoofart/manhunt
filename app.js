@@ -5,18 +5,18 @@
 'use strict';
 
 /* ---------------------------------------------------------
-   1. FIREBASE CONFIG — Safely loaded from environment variables
+   1. FIREBASE CONFIG — replace with your project's settings
+   (Firebase console → Project settings → Your apps → Web app)
    --------------------------------------------------------- */
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  apiKey: 'AIzaSyB9usU73Lj4YTGXxV8FyDpH7b9ut3nmUFw',
+  authDomain: 'manhunt-5fc51.firebaseapp.com',
+  databaseURL: 'https://manhunt-5fc51-default-rtdb.firebaseio.com',
+  projectId: 'manhunt-5fc51',
+  storageBucket: 'manhunt-5fc51.firebasestorage.app',
+  messagingSenderId: '781429662353',
+  appId: '1:781429662353:web:7260467466f196ac285530',
 };
-
 
 /* ---------------------------------------------------------
    2. CONSTANTS & IDENTITY
