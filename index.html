@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0a0e14" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="description"
+    content="Manhunt Live — a real-time GPS manhunt game. Join a room, get a secret role, and hunt or hide on a live map with friends." />
+  <title>Manhunt Live — Real-Time GPS Manhunt Game</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
+    rel="stylesheet" />
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+  <!-- ===== Full-viewport map ===== -->
+  <main id="map" aria-label="Live game map"></main>
+
+  <!-- ===== In-game HUD ===== -->
+  <header id="status-pill" class="status-pill hidden" aria-live="polite">
+    <span id="role-chip" class="role-chip">—</span>
+    <span class="pill-divider" aria-hidden="true"></span>
+    <span class="pill-stat" title="Active players">
+      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+        <path fill="currentColor"
+          d="M16 11a4 4 0 1 0-4-4 4 4 0 0 0 4 4Zm-8 0a3 3 0 1 0-3-3 3 3 0 0 0 3 3Zm8 2c-2.7 0-8 1.3-8 4v3h16v-3c0-2.7-5.3-4-8-4Zm-8 0c-.3 0-.7 0-1.1.1A4.8 4.8 0 0 1 9 17v3H0v-3c0-2.2 4.4-4 8-4Z" />
+      </svg>
+      <span id="player-count">0</span>
+    </span>
+    <span class="pill-divider" aria-hidden="true"></span>
+    <span class="pill-stat mono" title="Match timer">
+      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+        <path fill="currentColor" d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm1 10.4 3.5 2.1-.8 1.3L11 13V7h2Z" />
+      </svg>
+      <span id="game-timer">00:00</span>
+    </span>
+    <span id="runner-score-group" class="pill-stat-group hidden" title="Runners surviving">
+      <span class="pill-divider" aria-hidden="true"></span>
+      <span class="pill-stat mono">
+        <span aria-hidden="true">🏃</span>
+        <span id="runners-alive-count">0</span>/<span id="runners-total-count">0</span>
+      </span>
+    </span>
+  </header>
+
+  <!-- Runner Tag Code display (shown only for runners) -->
+  <div id="runner-tag-pill" class="runner-tag-pill hidden" role="region" aria-label="Your secret tag code">
+    <span class="tag-label">YOUR TAG CODE:</span>
+    <span id="runner-tag-code" class="tag-code-box mono">[ ---- ]</span>
+  </div>
+
+  <!-- Hunter Tag Submission Bar (shown only for hunters) -->
+  <div id="hunter-tag-bar" class="hunter-tag-bar hidden" role="region" aria-label="Tag runner">
+    <div class="hunter-tag-card">
+      <span class="hunter-tag-title">TAG RUNNER:</span>
+      <input id="tag-code-input" class="tag-code-input mono" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="4-digit code" enterkeyhint="done" aria-label="Runner 4 digit code" />
+      <button id="tag-submit-btn" class="btn btn-tag" type="button">SUBMIT TAG</button>
+    </div>
+  </div>
+
+  <!-- Banner stack: grace countdown, out-of-zone warning, GPS status -->
+  <div class="banner-stack">
+    <div id="grace-banner" class="grace-banner hidden" role="timer" aria-live="polite">
+      <div class="grace-row">
+        <span class="grace-icon" aria-hidden="true">⏳</span>
+        <span id="grace-text" class="grace-text mono">GRACE PERIOD: 02:00 REMAINING</span>
+      </div>
+      <span id="grace-sub" class="grace-sub">Runners — scatter and hide now!</span>
+      <div class="grace-progress"><div id="grace-progress-bar" class="grace-progress-bar"></div></div>
+    </div>
+
+    <div id="zone-banner" class="zone-banner hidden" role="alert">
+      <span id="zone-banner-text">⚠️ OUTSIDE SAFE ZONE - YOU ARE REVEALED!</span>
+    </div>
+
+    <div id="gps-banner" class="gps-banner hidden" role="status">
+      <span class="gps-dot"></span>
+      <span id="gps-banner-text">Searching for GPS…</span>
+    </div>
+  </div>
+
+  <!-- Hunter freeze overlay (grace period) -->
+  <div id="hunter-lock" class="hunter-lock hidden" role="alert">
+    <div class="hunter-lock-card">
+      <div class="lock-icon" aria-hidden="true">🔒</div>
+      <p class="lock-title">HUNTERS BLINDED &amp; FROZEN - WAIT FOR GRACE PERIOD TO END</p>
+      <p id="hunter-lock-time" class="lock-time mono">02:00</p>
+      <p class="lock-sub">Runner positions are hidden and radar is offline until the hunt begins.</p>
+    </div>
+  </div>
+
+  <!-- Radar sweep effect while a ping is active -->
+  <div id="radar-sweep" class="radar-sweep hidden" aria-hidden="true"></div>
+
+  <!-- Hunter radar ping -->
+  <button id="ping-btn" class="ping-btn hidden" type="button" data-mode="locked" disabled>
+    <span id="ping-label">📡 Ping Radar (3 left)</span>
+  </button>
+
+  <!-- Tagged / Caught Fullscreen Overlay for Runners -->
+  <div id="caught-overlay" class="caught-overlay hidden" role="alert" aria-live="assertive">
+    <div class="caught-card">
+      <div class="caught-icon" aria-hidden="true">💥</div>
+      <h2 class="caught-title">YOU HAVE BEEN CAUGHT!</h2>
+      <p id="caught-by-text" class="caught-by">Tagged by Hunter</p>
+      <p class="caught-sub">You are eliminated. Spectating remaining match...</p>
+      <button id="caught-dismiss-btn" class="btn btn-primary" type="button">Spectate Match</button>
+    </div>
+  </div>
+
+  <!-- Match End / Game Over Winner Modal -->
+  <div id="game-over-modal" class="game-over-modal hidden" role="dialog" aria-modal="true" aria-labelledby="winner-title">
+    <div class="game-over-card">
+      <div id="winner-trophy" class="winner-trophy" aria-hidden="true">🏆</div>
+      <h2 id="winner-title" class="winner-title">HUNTERS WIN!</h2>
+      <p id="winner-sub" class="winner-sub">All runners were successfully tracked and tagged.</p>
+      <div class="match-stats">
+        <div class="stat-box">
+          <span class="stat-label">Surviving Runners</span>
+          <span id="stat-survivors" class="stat-val mono">0</span>
+        </div>
+        <div class="stat-box">
+          <span class="stat-label">Eliminated</span>
+          <span id="stat-eliminated" class="stat-val mono">0</span>
+        </div>
+      </div>
+      <div class="game-over-actions">
+        <button id="game-over-lobby-btn" class="btn btn-primary btn-block" type="button">Return to Lobby</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="game-controls" class="game-controls hidden">
+    <button id="end-game-btn" class="btn btn-danger-ghost hidden" type="button">
+      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+        <path fill="currentColor" d="M6 6h12v12H6z" />
+      </svg>
+      End Game
+    </button>
+    <div id="zone-chip" class="zone-chip hidden" title="Safe zone radius">
+      <span class="zone-ring" aria-hidden="true"></span><span id="zone-chip-text">— ft</span>
+    </div>
+    <div id="gps-chip" class="gps-chip" title="GPS accuracy">
+      <span class="gps-dot"></span><span id="gps-accuracy">— m</span>
+    </div>
+  </div>
+
+  <!-- ===== Right-side Distance Visual Gauge ===== -->
+  <aside id="distance-hud" class="distance-hud hidden" aria-label="Zone Distance Visual">
+    <div class="dist-card">
+      <div class="dist-header">
+        <div class="dist-title-group">
+          <span id="dist-indicator-dot" class="dist-indicator-dot"></span>
+          <span class="dist-title">DISTANCE</span>
+        </div>
+        <button id="dist-toggle-btn" class="dist-toggle-btn" type="button" aria-label="Toggle details">
+          <svg id="dist-toggle-icon" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+            <path fill="currentColor" d="M7 10l5 5 5-5z"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Main Readout: Distance to Zone Edge -->
+      <div class="dist-readout">
+        <div class="dist-edge-val-row">
+          <span id="dist-edge-num" class="dist-number mono">---</span>
+          <span class="dist-unit-sm">ft</span>
+        </div>
+        <span id="dist-edge-label" class="dist-label">TO SAFE BORDER</span>
+      </div>
+
+      <!-- Tactical Vertical Distance Ruler / Tape -->
+      <div class="dist-gauge-track-wrap">
+        <div class="dist-gauge-track">
+          <!-- Danger zone at top -->
+          <div class="dist-danger-zone" title="Danger Zone">
+            <span class="dist-zone-tag">OUT</span>
+          </div>
+
+          <!-- Safe zone border line -->
+          <div id="dist-border-line" class="dist-border-line" title="Safe Zone Perimeter">
+            <span class="dist-border-badge">PERIMETER</span>
+          </div>
+
+          <!-- Safe interior zone -->
+          <div id="dist-safe-interior" class="dist-safe-interior" title="Safe Zone Interior"></div>
+
+          <!-- Min Radius line -->
+          <div id="dist-min-line" class="dist-min-line" title="Minimum Radius Threshold">
+            <span class="dist-min-badge">MIN</span>
+          </div>
+
+          <!-- Zone center at bottom -->
+          <div class="dist-center-mark" title="Zone Center">
+            <span class="dist-center-badge">CENTER</span>
+          </div>
+
+          <!-- Player position marker sliding vertically along gauge -->
+          <div id="dist-player-pin" class="dist-player-pin" style="bottom: 50%;">
+            <div class="dist-pin-pointer"></div>
+            <div class="dist-pin-bubble">
+              <span class="dist-pin-dot"></span>
+              <span id="dist-pin-text" class="dist-pin-text mono">YOU</span>
+            </div>
+          </div>
+
+          <!-- Hunter target markers (closest runner, pings) -->
+          <div id="dist-targets-container" class="dist-targets-container"></div>
+        </div>
+      </div>
+
+      <!-- Collapsible Detailed Metrics -->
+      <div id="dist-details" class="dist-details">
+        <div class="dist-metric">
+          <span class="dist-metric-label">Center</span>
+          <span id="dist-from-center" class="dist-metric-val mono">-- ft</span>
+        </div>
+        <div class="dist-metric">
+          <span class="dist-metric-label">Radius</span>
+          <span id="dist-zone-radius" class="dist-metric-val mono">-- ft</span>
+        </div>
+        <div id="dist-target-row" class="dist-metric hidden">
+          <span id="dist-target-label" class="dist-metric-label">Target</span>
+          <span id="dist-target-val" class="dist-metric-val mono">-- ft</span>
+        </div>
+        <div id="dist-status-badge" class="dist-status-badge in-zone">SAFE</div>
+      </div>
+    </div>
+  </aside>
+
+  <button id="recenter-btn" class="fab hidden" type="button" aria-label="Re-center map on me">
+    <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
+      <path fill="currentColor"
+        d="M12 8a4 4 0 1 0 4 4 4 4 0 0 0-4-4Zm9 3h-2.1A7 7 0 0 0 13 5.1V3h-2v2.1A7 7 0 0 0 5.1 11H3v2h2.1a7 7 0 0 0 5.9 5.9V21h2v-2.1a7 7 0 0 0 5.9-5.9H21Zm-9 6a5 5 0 1 1 5-5 5 5 0 0 1-5 5Z" />
+    </svg>
+  </button>
+
+  <!-- ===== Lobby modal (bottom sheet on mobile) ===== -->
+  <section id="lobby" class="lobby" role="dialog" aria-modal="true" aria-labelledby="app-title">
+    <div class="lobby-card">
+      <div class="brand">
+        <div class="brand-logo" aria-hidden="true">
+          <svg viewBox="0 0 48 48" width="44" height="44">
+            <circle cx="24" cy="24" r="17" fill="none" stroke="currentColor" stroke-width="4" />
+            <circle cx="24" cy="24" r="6" fill="currentColor" />
+            <path d="M24 1v10M24 37v10M1 24h10M37 24h10" stroke="currentColor" stroke-width="4"
+              stroke-linecap="round" />
+          </svg>
+        </div>
+        <div>
+          <h1 id="app-title">Manhunt <span class="accent">Live</span></h1>
+          <p class="tagline">Real-time GPS hide &amp; hunt</p>
+        </div>
+      </div>
+
+      <div class="room-row">
+        <div class="room-chip">
+          <span class="room-label">ROOM</span>
+          <span id="room-name" class="room-name">—</span>
+        </div>
+        <button id="share-btn" class="btn btn-icon" type="button" aria-label="Share invite link">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+            <path fill="currentColor"
+              d="M18 16a3 3 0 0 0-2.4 1.2l-6.7-3.4a3 3 0 0 0 0-1.6l6.7-3.4A3 3 0 1 0 15 7a3 3 0 0 0 .1.8L8.4 11.2a3 3 0 1 0 0 3.6l6.7 3.4A3 3 0 1 0 18 16Z" />
+          </svg>
+        </button>
+      </div>
+
+      <div id="config-warning" class="notice notice-warn hidden">
+        <strong>Firebase not configured.</strong>
+        Open <code>app.js</code> and replace the placeholder <code>firebaseConfig</code> with your project's settings
+        (Realtime Database must be enabled).
+      </div>
+
+      <!-- Step 1: Join -->
+      <div id="join-view" class="view">
+        <label for="name-input" class="field-label">Your screen name</label>
+        <input id="name-input" class="text-input" type="text" maxlength="20" autocomplete="nickname"
+          autocapitalize="words" enterkeyhint="go" placeholder="e.g. Shadow Fox" />
+        <button id="join-btn" class="btn btn-primary btn-block" type="button">Join Lobby</button>
+        <p id="waiting-count" class="hint">Connecting…</p>
+      </div>
+
+      <!-- Step 2: Lobby -->
+      <div id="lobby-view" class="view hidden">
+        <div class="list-header">
+          <h2>Players</h2>
+          <span id="lobby-count" class="count-badge">0</span>
+        </div>
+        <ul id="player-list" class="player-list" aria-live="polite"></ul>
+
+        <div id="host-controls" class="host-controls hidden">
+          <div class="host-title">
+            <span class="crown" aria-hidden="true">👑</span> You're the host
+          </div>
+          <label for="hunter-count" class="field-label">Hunters Count</label>
+          <div class="stepper">
+            <button id="hunter-minus" class="btn btn-step" type="button" aria-label="Fewer hunters">−</button>
+            <input id="hunter-count" class="step-input" type="number" inputmode="numeric" min="1" value="1" />
+            <button id="hunter-plus" class="btn btn-step" type="button" aria-label="More hunters">+</button>
+          </div>
+
+          <!-- Game & Zone Settings -->
+          <div id="zone-settings" class="zone-settings">
+            <h3 class="settings-title">Game &amp; Zone Settings</h3>
+
+            <!-- Match Duration Slider (controls total pings: 1 per 5 min) -->
+            <div class="slider-field">
+              <div class="slider-head">
+                <label for="duration-slider">⏱️ Match Duration</label>
+                <output id="duration-value" for="duration-slider" class="slider-value mono">Match Duration: 15 min</output>
+              </div>
+              <input id="duration-slider" class="range" type="range" min="5" max="60" step="5" value="15" />
+              <div class="slider-scale"><span>5 min (1 ping)</span><span>60 min (12 pings)</span></div>
+            </div>
+
+            <!-- Grace Period Slider -->
+            <div class="slider-field">
+              <div class="slider-head">
+                <label for="grace-slider">⏳ Grace Period</label>
+                <output id="grace-value" for="grace-slider" class="slider-value mono">Grace Period: 2:00</output>
+              </div>
+              <input id="grace-slider" class="range" type="range" min="30" max="300" step="15" value="120" />
+              <div class="slider-scale"><span>0:30</span><span>5:00</span></div>
+            </div>
+
+            <!-- Starting Radius Slider -->
+            <div class="slider-field">
+              <div class="slider-head">
+                <label for="radius-slider">⭕ Starting Radius</label>
+                <output id="radius-value" for="radius-slider" class="slider-value mono">Starting Radius: 1,500 ft</output>
+              </div>
+              <input id="radius-slider" class="range range-zone" type="range" min="200" max="5000" step="50"
+                value="1500" />
+              <div class="slider-scale"><span>200 ft</span><span>5,000 ft</span></div>
+            </div>
+
+            <div class="preview-wrap">
+              <div id="zone-preview-map" class="zone-preview-map" aria-label="Safe zone preview map"></div>
+              <span id="zone-center-tag" class="preview-tag hidden">📍 Centered on you</span>
+              <button id="zone-recenter-btn" class="preview-reset hidden" type="button">Use my GPS</button>
+              <div id="zone-preview-status" class="preview-status">Locating you…</div>
+            </div>
+            <p class="preview-hint">Red = starting zone · Amber = final zone · Tap map to move center</p>
+
+            <!-- Toggle Checkbox: Enable Zone Shrinking -->
+            <div class="toggle-field">
+              <label class="toggle-label" for="shrink-toggle">
+                <input id="shrink-toggle" class="toggle-checkbox" type="checkbox" checked />
+                <span class="toggle-custom"></span>
+                <span class="toggle-label-text">Enable Zone Shrinking</span>
+              </label>
+            </div>
+
+            <!-- Minimum Final Radius Slider -->
+            <div id="min-radius-group" class="slider-field">
+              <div class="slider-head">
+                <label for="min-radius-slider">🎯 Min Radius</label>
+                <output id="min-radius-value" for="min-radius-slider" class="slider-value mono">Min Radius: 100 ft</output>
+              </div>
+              <input id="min-radius-slider" class="range range-min" type="range" min="50" max="500" step="25"
+                value="100" />
+              <div class="slider-scale"><span>50 ft</span><span>500 ft</span></div>
+            </div>
+
+            <!-- Shrink Speed Slider (range 1 to 300 ft/min, step 1) -->
+            <div id="shrink-speed-group" class="slider-field">
+              <div class="slider-head">
+                <label for="shrink-slider">📉 Shrink Speed</label>
+                <output id="shrink-value" for="shrink-slider" class="slider-value mono">Shrink Speed: 150 ft/min</output>
+              </div>
+              <input id="shrink-slider" class="range" type="range" min="1" max="300" step="1" value="150" />
+              <div class="slider-scale"><span>1 ft/min</span><span>300 ft/min</span></div>
+            </div>
+
+            <p id="zone-summary" class="zone-summary"></p>
+          </div>
+
+          <button id="start-btn" class="btn btn-start btn-block" type="button">
+            Start Game &amp; Shuffle Roles
+          </button>
+        </div>
+
+        <div id="guest-wait" class="guest-wait">
+          <span class="spinner" aria-hidden="true"></span>
+          Waiting for the host to start…
+        </div>
+
+        <button id="leave-btn" class="btn btn-ghost btn-block" type="button">Leave Lobby</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Role reveal splash ===== -->
+  <section id="reveal" class="reveal hidden" aria-live="assertive">
+    <div class="reveal-inner">
+      <p class="reveal-kicker">You are a</p>
+      <p id="reveal-role" class="reveal-role">RUNNER</p>
+      <p id="reveal-sub" class="reveal-sub">Stay hidden. Don't get caught.</p>
+      <p class="reveal-tap">Tap to continue</p>
+    </div>
+  </section>
+
+  <div id="toast-stack" class="toast-stack" aria-live="polite"></div>
+
+  <!-- Libraries -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
+  <script src="app.js"></script>
+</body>
+
+</html>
