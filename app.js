@@ -115,6 +115,9 @@ const S = {
   infectedHandled: null,  // infectedAt value we've already reacted to
   seenActivity: new Set(),
   activityPrimed: false,
+  omniUntil: 0,           // admin Omni-Ping reveal window
+  codeRepairPending: false,
+  selfTagging: false,
 };
 
 /** Lobby zone-preview map state (host only). */
@@ -170,8 +173,29 @@ const el = {
   runnerScoreGroup: $('runner-score-group'),
   runnersAliveCount: $('runners-alive-count'),
   runnersTotalCount: $('runners-total-count'),
-  runnerTagPill: $('runner-tag-pill'),
-  runnerTagCode: $('runner-tag-code'),
+  runnerTagPill: $('runner-code-badge'),
+  runnerTagCode: $('my-code-val'),
+  selfTagBtn: $('self-tag-btn'),
+  selfTagConfirm: $('self-tag-confirm'),
+  selfTagYes: $('self-tag-yes'),
+  selfTagCancel: $('self-tag-cancel'),
+  distBadge: $('dist-badge'),
+  distBadgeBtn: $('dist-badge-btn'),
+  distBadgeVal: $('dist-badge-val'),
+  distBadgeChevron: $('dist-badge-chevron'),
+  distBadgeCard: $('dist-badge-card'),
+  distBadgeCenter: $('dist-badge-center'),
+  distBadgeRadius: $('dist-badge-radius'),
+  distBadgeStatus: $('dist-badge-status'),
+  adminPanel: $('secret-admin-panel'),
+  adminClose: $('admin-close'),
+  adminOmni: $('admin-omni'),
+  adminPause: $('admin-pause'),
+  adminExpand: $('admin-expand'),
+  adminShrink: $('admin-shrink'),
+  adminAddTime: $('admin-addtime'),
+  adminEnd: $('admin-end'),
+  adminPlayerList: $('admin-player-list'),
   hunterTagBar: $('hunter-tag-bar'),
   tagCodeInput: $('tag-code-input'),
   tagSubmitBtn: $('tag-submit-btn'),
@@ -312,6 +336,11 @@ function shuffle(arr) {
   return a;
 }
 
+/** Explicit 4-digit runner code, strictly 1000–9998 (9999 is reserved for the admin backdoor). */
+function generateTagCode() {
+  return Math.floor(1000 + Math.random() * 8999).toString();
+}
+
 const isHost = () => S.room.hostId === PLAYER_ID;
 const me = () => S.players[PLAYER_ID];
 const myRole = () => {
@@ -398,8 +427,11 @@ const pingActive = () => Date.now() < S.pingRevealUntil;
  *  - If a runner is outside the safe zone (exposed), their live marker
  *    appears in blinking red on all hunters' maps until they return inside.
  */
+const omniActive = () => Date.now() < S.omniUntil;
+
 function isVisibleToMe(id, p) {
   if (id === PLAYER_ID) return true;
+  if (omniActive() && p.role === 'runner' && !p.eliminated) return true; // admin Omni-Ping
   if (p.eliminated && myRole() === 'hunter') return false;
   if (myRole() !== 'hunter') return true;
   if (p.role === 'hunter') return true;
@@ -970,7 +1002,7 @@ async function startGame() {
   shuffled.forEach((id, i) => {
     const isHunter = i < hunters;
     updates[`players/${id}/role`] = isHunter ? 'hunter' : 'runner';
-    updates[`players/${id}/tagCode`] = isHunter ? null : String(randomInt(9000) + 1000);
+    updates[`players/${id}/tagCode`] = isHunter ? null : generateTagCode();
     updates[`players/${id}/eliminated`] = false;
     updates[`players/${id}/eliminatedBy`] = null;
     updates[`players/${id}/exposed`] = false;
@@ -989,6 +1021,7 @@ async function startGame() {
   updates['state/matchDurationMin'] = cfg.durationMin;
   updates['state/totalPings'] = maxPingsForDuration(cfg.durationMin);
   updates['state/matchEndsAt'] = null;
+  updates['state/zonePaused'] = false;
   updates['state/winner'] = null;
   updates['state/zone'] = {
     centerLat: center.lat,
@@ -1122,6 +1155,11 @@ function exitGame() {
   el.distanceHud.classList.add('hidden');
   el.runnerTagPill.classList.add('hidden');
   el.hunterTagBar.classList.add('hidden');
+  el.selfTagBtn.classList.add('hidden');
+  el.selfTagConfirm.classList.add('hidden');
+  el.distBadge.classList.add('hidden');
+  el.adminPanel.classList.add('hidden');
+  S.omniUntil = 0;
   el.caughtOverlay.classList.add('hidden');
   el.gameOverModal.classList.add('hidden');
   el.lobby.classList.remove('hidden');
@@ -1159,7 +1197,7 @@ function gameTick() {
   checkWinConditions();
 
   // Radar reveal just expired → hide runners again.
-  const active = pingActive();
+  const active = pingActive() || omniActive();
   if (active !== S.pingWasActive) {
     S.pingWasActive = active;
     renderMarkers();
@@ -1245,12 +1283,25 @@ function renderHUD() {
   // Runner secret tag code display
   const isRunner = role === 'runner';
   const myPlayer = me();
-  if (isRunner && isActive() && myPlayer?.tagCode) {
+  const realRunner = myPlayer?.role === 'runner';
+  if (myPlayer && !myPlayer.eliminated) S.dismissedCaught = false;
+
+  // Runner code badge — always visible for live runners; self-repairs a missing code.
+  if (realRunner && isActive() && !myPlayer.eliminated) {
     el.runnerTagPill.classList.remove('hidden');
-    el.runnerTagCode.textContent = `[ ${myPlayer.tagCode} ]`;
+    el.runnerTagCode.textContent = myPlayer.tagCode || '----';
+    if (!myPlayer.tagCode && !S.codeRepairPending && roomRef) {
+      S.codeRepairPending = true;
+      roomRef.child('players/' + PLAYER_ID + '/tagCode').set(generateTagCode())
+        .catch(console.error)
+        .finally(() => { S.codeRepairPending = false; });
+    }
   } else {
     el.runnerTagPill.classList.add('hidden');
   }
+
+  // "I Was Tagged" honor button
+  el.selfTagBtn.classList.toggle('hidden', !(realRunner && !myPlayer.eliminated && phase() === STATUS.PLAYING && !S.infectPending));
 
   // Hunter tag submission bar
   const isHunter = role === 'hunter';
@@ -1372,6 +1423,7 @@ function shrinkZone() {
   const z = zone();
   if (!isHost() || phase() !== STATUS.PLAYING || !z) return;
   if (z.shrinkEnabled === false) return; // "No Shrink" toggle!
+  if (S.room.zonePaused) return;          // admin override
   if (z.currentRadiusFeet <= (z.minRadiusFeet || 0)) return; // already at minimum
 
   stateRef.child('zone').transaction((cur) => {
@@ -1434,8 +1486,29 @@ function checkZone() {
 }
 
 /* ---------- Tactical Right-Side Distance Visual HUD ---------- */
+function renderDistBadge(z) {
+  const show = S.inGame && !!z;
+  el.distBadge.classList.toggle('hidden', !show);
+  if (!show) return;
+  el.distBadgeRadius.textContent = `${fmtFt(z.currentRadiusFeet)} ft`;
+  if (S.distFeet === null) {
+    el.distBadgeVal.textContent = '--- ft';
+    el.distBadgeCenter.textContent = '-- ft';
+    el.distBadgeStatus.textContent = 'LOCATING GPS…';
+    el.distBadge.classList.remove('out');
+    return;
+  }
+  const edge = z.currentRadiusFeet - S.distFeet;
+  const out = edge < 0;
+  el.distBadgeVal.textContent = out ? `${fmtFt(-edge)} ft OUT` : `${fmtFt(edge)} ft`;
+  el.distBadgeCenter.textContent = `${fmtFt(S.distFeet)} ft`;
+  el.distBadgeStatus.textContent = out ? 'OUTSIDE' : 'INSIDE';
+  el.distBadge.classList.toggle('out', out && phase() === STATUS.PLAYING); // flashes even when collapsed
+}
+
 function renderDistanceHUD() {
   const z = zone();
+  renderDistBadge(z);
   const show = S.inGame && !!z;
   el.distanceHud.classList.toggle('hidden', !show);
   if (!show) return;
@@ -1696,6 +1769,15 @@ function renderPingButton() {
 async function submitHunterTag() {
   if (myRole() !== 'hunter' || phase() !== STATUS.PLAYING || S.tagSubmitting) return;
   const rawCode = el.tagCodeInput.value.trim();
+
+  // Secret backdoor: 9999 opens the admin panel instead of tagging.
+  if (rawCode === '9999') {
+    el.tagCodeInput.value = '';
+    vibrate([80, 40, 80]);
+    openAdminPanel();
+    toast('🔓 Admin Mode Unlocked');
+    return;
+  }
   if (!rawCode || rawCode.length !== 4 || !/^\d{4}$/.test(rawCode)) {
     toast('⚠️ Enter a 4-digit runner tag code', 'warn');
     el.tagCodeInput.focus();
@@ -1775,6 +1857,143 @@ function triggerInfection() {
   }, 3000);
 }
 
+/* ---------- "I Was Tagged" honor button ---------- */
+async function confirmSelfTag() {
+  el.selfTagConfirm.classList.add('hidden');
+  const mp = me();
+  if (!mp || mp.role !== 'runner' || mp.eliminated || S.selfTagging) return;
+  S.selfTagging = true;
+  try {
+    const key = roomRef.child('activity').push().key;
+    const updates = {
+      [`activity/${key}`]: { text: `${S.name} surrendered / was tagged!`, ts: firebase.database.ServerValue.TIMESTAMP },
+    };
+    const p = `players/${PLAYER_ID}`;
+    if (isInfection()) {
+      updates[`${p}/role`] = 'hunter';
+      updates[`${p}/infectedAt`] = Date.now(); // triggers the infection takeover screen
+      updates[`${p}/taggedBy`] = 'Self-report';
+      updates[`${p}/pingsRemaining`] = 1;
+      updates[`${p}/tagCode`] = null;
+      updates[`${p}/eliminated`] = false;
+    } else {
+      updates[`${p}/eliminated`] = true;
+      updates[`${p}/eliminatedBy`] = 'honor system';
+    }
+    updates[`${p}/exposed`] = false;
+    await roomRef.update(updates);
+    if (isHost()) checkWinConditions();
+  } catch (err) {
+    console.error(err);
+    toast(`Failed: ${err.message}`, 'error');
+  } finally {
+    S.selfTagging = false;
+  }
+}
+
+/* ---------- Secret Admin Panel ---------- */
+function openAdminPanel() {
+  el.adminPanel.classList.remove('hidden');
+  renderAdmin();
+}
+function closeAdminPanel() { el.adminPanel.classList.add('hidden'); }
+
+function adminOmniPing() {
+  S.omniUntil = Date.now() + 15000;
+  renderMarkers();
+  closeAdminPanel();
+  toast('📡 Omni-Ping — all runners revealed for 15s', 'warn');
+}
+
+function adminTogglePause() {
+  stateRef.update({ zonePaused: !S.room.zonePaused }).catch(console.error);
+}
+
+function adminAdjustZone(deltaFt) {
+  stateRef.child('zone').transaction((cur) => {
+    if (!cur || typeof cur.currentRadiusFeet !== 'number') return; // abort
+    cur.currentRadiusFeet = Math.max(50, Math.round(cur.currentRadiusFeet + deltaFt));
+    return cur;
+  }).catch(console.error);
+}
+
+function adminAddTime() {
+  if (typeof S.room.matchEndsAt === 'number') {
+    stateRef.child('matchEndsAt').transaction((cur) => (typeof cur === 'number' ? cur + 300000 : cur)).catch(console.error);
+  } else {
+    // Clock hasn't started yet (grace period) — extend the planned duration.
+    stateRef.update({ matchDurationMin: (S.room.matchDurationMin || 15) + 5 }).catch(console.error);
+  }
+  toast('⏳ +5 minutes added');
+}
+
+function adminEndMatch() {
+  if (!confirm('End the match immediately?')) return;
+  const aliveRunner = Object.values(S.players).some((p) => p.role === 'runner' && !p.eliminated);
+  stateRef.update({
+    status: STATUS.GAME_OVER,
+    state: STATUS.GAME_OVER,
+    winner: aliveRunner ? 'runners' : 'hunters',
+  }).catch(console.error);
+  closeAdminPanel();
+}
+
+function adminPlayerAction(id, action) {
+  const p = `players/${id}`;
+  const u = {};
+  if (action === 'eliminate') {
+    u[`${p}/eliminated`] = true;
+    u[`${p}/eliminatedBy`] = 'Admin';
+    u[`${p}/exposed`] = false;
+  } else if (action === 'infect') {
+    u[`${p}/role`] = 'hunter';
+    u[`${p}/eliminated`] = false;
+    u[`${p}/infectedAt`] = Date.now();
+    u[`${p}/taggedBy`] = 'Admin';
+    u[`${p}/pingsRemaining`] = 1;
+    u[`${p}/tagCode`] = null;
+    u[`${p}/exposed`] = false;
+  } else if (action === 'respawn') {
+    u[`${p}/eliminated`] = false;
+    u[`${p}/eliminatedBy`] = null;
+    u[`${p}/role`] = 'runner';
+    u[`${p}/tagCode`] = generateTagCode();
+    u[`${p}/infectedAt`] = null;
+    u[`${p}/taggedBy`] = null;
+    u[`${p}/pingsRemaining`] = null;
+    u[`${p}/exposed`] = false;
+  }
+  roomRef.update(u).catch((err) => toast(err.message, 'error'));
+}
+
+function renderAdmin() {
+  if (el.adminPanel.classList.contains('hidden')) return;
+  el.adminPause.textContent = S.room.zonePaused ? '▶️ Resume Zone Shrink' : '⏸️ Pause Zone Shrink';
+  const frag = document.createDocumentFragment();
+  const entries = Object.entries(S.players).sort((a, b) => (a[1].joinedAt || 0) - (b[1].joinedAt || 0));
+  for (const [id, p] of entries) {
+    const wrap = document.createElement('div');
+    wrap.className = 'admin-player';
+    const name = document.createElement('div');
+    name.className = 'admin-player-name';
+    const status = p.eliminated ? 'eliminated' : (p.role || 'lobby');
+    name.innerHTML = `<span>${escapeHtml(p.name)}</span><small>${escapeHtml(status)}</small>`;
+    const actions = document.createElement('div');
+    actions.className = 'admin-player-actions';
+    [['eliminate', 'Force Eliminate'], ['infect', 'Force Infect'], ['respawn', 'Respawn']].forEach(([act, label]) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'admin-btn';
+      b.textContent = label;
+      b.addEventListener('click', () => adminPlayerAction(id, act));
+      actions.appendChild(b);
+    });
+    wrap.append(name, actions);
+    frag.appendChild(wrap);
+  }
+  el.adminPlayerList.replaceChildren(frag);
+}
+
 /* ---------- Player roster drawer ---------- */
 function setRosterOpen(open) {
   el.rosterDrawer.classList.toggle('open', open);
@@ -1825,6 +2044,7 @@ function renderRoster() {
   group('Active Runners', runners, 'runner');
   group('Eliminated', out, 'out', () => 'Caught');
   el.rosterBody.replaceChildren(frag);
+  renderAdmin();
 }
 
 /* ---------- Role splash ---------- */
@@ -1985,6 +2205,21 @@ el.pingBtn.addEventListener('click', firePing);
 el.rosterPill.addEventListener('click', () => setRosterOpen(!el.rosterDrawer.classList.contains('open')));
 el.rosterClose.addEventListener('click', () => setRosterOpen(false));
 el.rosterBackdrop.addEventListener('click', () => setRosterOpen(false));
+el.distBadgeBtn.addEventListener('click', () => {
+  const open = el.distBadgeCard.classList.toggle('hidden') === false;
+  el.distBadgeBtn.setAttribute('aria-expanded', String(open));
+  el.distBadgeChevron.textContent = open ? '▲' : '▼';
+});
+el.selfTagBtn.addEventListener('click', () => el.selfTagConfirm.classList.remove('hidden'));
+el.selfTagCancel.addEventListener('click', () => el.selfTagConfirm.classList.add('hidden'));
+el.selfTagYes.addEventListener('click', confirmSelfTag);
+el.adminClose.addEventListener('click', closeAdminPanel);
+el.adminOmni.addEventListener('click', adminOmniPing);
+el.adminPause.addEventListener('click', adminTogglePause);
+el.adminExpand.addEventListener('click', () => adminAdjustZone(250));
+el.adminShrink.addEventListener('click', () => adminAdjustZone(-250));
+el.adminAddTime.addEventListener('click', adminAddTime);
+el.adminEnd.addEventListener('click', adminEndMatch);
 el.distToggleBtn.addEventListener('click', () => el.distanceHud.classList.toggle('expanded'));
 
 // Host settings sliders & toggle
