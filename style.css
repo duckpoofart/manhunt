@@ -1859,3 +1859,120 @@ body.out-of-zone::after {
 }
 
 
+
+/* ---------- Infection mode toggle extras ---------- */
+.toggle-label-wrap { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.toggle-subtext { font-size: 12px; font-weight: 500; color: var(--muted); line-height: 1.3; }
+
+/* ---------- Infection takeover overlay ---------- */
+.infected-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  color: #fff;
+  background: radial-gradient(circle at center, rgba(220, 20, 50, 0.96) 0%, rgba(110, 0, 20, 0.98) 100%);
+  animation: infectedFlash 0.5s ease-in-out infinite alternate;
+}
+.infected-icon { font-size: 80px; animation: shake 0.5s ease infinite; }
+.infected-title { font-size: clamp(28px, 8vw, 44px); font-weight: 900; margin: 8px 0; letter-spacing: -0.01em; }
+.infected-sub { font-size: clamp(18px, 5vw, 26px); font-weight: 800; margin: 0; }
+@keyframes infectedFlash {
+  from { filter: brightness(1); }
+  to { filter: brightness(1.35); }
+}
+
+/* ---------- Collapsible player roster ---------- */
+.roster-pill {
+  position: fixed;
+  left: 12px;
+  top: calc(var(--safe-top) + 84px);
+  z-index: 1095;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  color: #fff;
+  font: inherit;
+  font-weight: 800;
+  font-size: 13px;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+.roster-pill:active { transform: scale(0.95); }
+.roster-backdrop { position: fixed; inset: 0; z-index: 1400; background: transparent; }
+.roster-drawer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1450;
+  max-height: 45vh;
+  overflow-y: auto;
+  padding: 0 14px calc(var(--safe-bottom) + 12px);
+  border-radius: 18px 18px 0 0;
+  color: #fff;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.45);
+  transform: translateY(105%);
+  visibility: hidden;
+  transition: transform 0.28s cubic-bezier(0.2, 0.9, 0.25, 1), visibility 0.28s;
+}
+.roster-drawer.open { transform: none; visibility: visible; }
+@media (min-width: 600px) {
+  .roster-drawer { left: 12px; right: auto; bottom: 12px; width: 340px; border-radius: 18px; }
+}
+.roster-header {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  background: rgba(15, 23, 42, 0.95);
+  font-weight: 800;
+  font-size: 13px;
+}
+.roster-close {
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+}
+.roster-group-title {
+  margin: 6px 0 2px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.roster-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.roster-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; }
+.roster-dot.hunter { background: var(--hunter); }
+.roster-dot.runner { background: var(--runner); }
+.roster-dot.out { background: #6b7588; }
+.roster-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.roster-row.out { color: #7b8497; }
+.roster-row.out .roster-name { text-decoration: line-through; }
+.roster-tag { flex: none; font-size: 11px; color: #7b8497; }
