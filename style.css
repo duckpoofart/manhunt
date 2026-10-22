@@ -476,8 +476,9 @@ h1 {
   animation: spin 0.9s linear infinite;
 }
 
-/* ---------- In-game HUD ---------- */
-.status-pill {
+/* ---------- In-game HUD: Unified Top Timer Pill ---------- */
+.status-pill,
+.hud-pill {
   position: fixed;
   top: calc(var(--safe-top) + 12px);
   left: 50%;
@@ -485,8 +486,8 @@ h1 {
   z-index: 1100;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 6px 16px 6px 6px;
+  gap: 10px;
+  padding: 6px 12px 6px 6px;
   border-radius: 999px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -497,23 +498,82 @@ h1 {
   animation: dropIn 0.45s cubic-bezier(0.2, 0.9, 0.25, 1.1);
 }
 .role-chip {
-  padding: 10px 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
   border-radius: 999px;
   font-weight: 900;
-  font-size: 15px;
-  letter-spacing: 0.12em;
+  font-size: 13.5px;
+  letter-spacing: 0.08em;
   color: #fff;
   background: #4b5566;
+  transition: background 0.3s, box-shadow 0.3s;
 }
-.role-chip.hunter {
+.chip-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 8px #fff;
+  display: inline-block;
+  flex-shrink: 0;
+  animation: blink 1.4s infinite ease-in-out;
+}
+.role-chip.hunter,
+.role-chip.role-hunter {
   background: var(--hunter);
-  box-shadow: 0 0 0 0 rgba(255, 45, 75, 0.6);
+  box-shadow: 0 0 12px rgba(255, 45, 75, 0.6);
   animation: pulseRed 2s infinite;
 }
-.role-chip.runner {
+.role-chip.hunter .chip-dot,
+.role-chip.role-hunter .chip-dot {
+  background: #fff;
+  box-shadow: 0 0 8px #fff;
+}
+.role-chip.runner,
+.role-chip.role-runner {
   background: var(--runner);
-  box-shadow: 0 0 0 0 rgba(31, 139, 255, 0.6);
+  box-shadow: 0 0 12px rgba(31, 139, 255, 0.6);
   animation: pulseBlue 2s infinite;
+}
+.role-chip.runner .chip-dot,
+.role-chip.role-runner .chip-dot {
+  background: #fff;
+  box-shadow: 0 0 8px #fff;
+}
+.hud-divider {
+  color: rgba(255, 255, 255, 0.28);
+  font-weight: 300;
+  user-select: none;
+}
+#match-timer {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 900;
+  font-size: 16px;
+  letter-spacing: 0.05em;
+  color: #fff;
+  padding: 0 4px;
+}
+.hud-inline-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font: inherit;
+  font-weight: 800;
+  font-size: 13.5px;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.12s;
+}
+.hud-inline-btn:active {
+  transform: scale(0.95);
+  background: rgba(255, 255, 255, 0.18);
 }
 .pill-divider {
   width: 1px;
@@ -2042,58 +2102,86 @@ body.out-of-zone::after {
 .confirm-actions { display: flex; flex-direction: column; gap: 10px; }
 .confirm-btn { width: 100%; min-height: 48px; }
 
-/* ---------- Collapsible distance badge (replaces the old vertical gauge) ---------- */
-#distance-hud { display: none !important; }
-.dist-badge {
-  position: fixed;
-  right: 12px;
-  top: calc(var(--safe-top) + 84px);
-  z-index: 1095;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
-}
-.dist-badge-btn {
+/* ---------- Reconnect Banner ---------- */
+.reconnect-banner {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-height: 44px;
-  padding: 0 14px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  padding: 8px 16px;
   border-radius: 999px;
-  background: rgba(15, 23, 42, 0.88);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  color: #fff;
-  font: inherit;
-  font-weight: 800;
-  font-size: 14px;
-  box-shadow: var(--shadow);
-  cursor: pointer;
-}
-.dist-badge-chevron { font-size: 10px; opacity: 0.8; }
-.dist-badge-card {
-  min-width: 230px;
-  padding: 10px 14px;
-  border-radius: 14px;
-  background: rgba(15, 23, 42, 0.92);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: #fff;
-  font-size: 12.5px;
-}
-.dist-badge-row { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; }
-.dist-badge-row span { color: var(--muted); }
-.dist-badge.out .dist-badge-btn {
   background: rgba(220, 38, 38, 0.95);
-  border-color: #fff;
-  animation: distBadgeAlert 0.8s ease-in-out infinite alternate;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 0 8px 24px rgba(239, 68, 68, 0.5);
+  color: #fff;
+  font-weight: 800;
+  font-size: 13.5px;
+  pointer-events: none;
+  animation: urgentPulse 1s infinite alternate;
 }
-@keyframes distBadgeAlert {
-  from { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.9); }
-  to { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); opacity: 0.75; }
+.reconnect-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #facc15;
+  animation: blink 0.8s infinite;
+}
+
+/* ---------- Golden Supply Drop Marker ---------- */
+.supply-drop-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.supply-drop-crate {
+  font-size: 28px;
+  filter: drop-shadow(0 0 10px #facc15);
+  animation: bob 1.8s ease-in-out infinite;
+  z-index: 2;
+  user-select: none;
+}
+.supply-drop-ring {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 2px solid #facc15;
+  background: rgba(250, 204, 21, 0.2);
+  box-shadow: 0 0 18px rgba(250, 204, 21, 0.7);
+  animation: supplyPulse 1.4s ease-out infinite;
+  z-index: 1;
+}
+@keyframes supplyPulse {
+  0% { transform: scale(0.8); opacity: 1; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
+.supply-drop-tip {
+  background: rgba(15, 23, 42, 0.95) !important;
+  border: 1px solid #facc15 !important;
+  color: #facc15 !important;
+  font-weight: 900 !important;
+  box-shadow: 0 4px 14px rgba(250, 204, 21, 0.4) !important;
+}
+
+/* Radar jammed state for ping button */
+.ping-btn[data-mode="jammed"] {
+  background: rgba(239, 68, 68, 0.25) !important;
+  border-color: #ef4444 !important;
+  color: #fca5a5 !important;
+  box-shadow: 0 0 16px rgba(239, 68, 68, 0.4) !important;
+  cursor: not-allowed;
+}
+
+/* Hunter Recon highlight tag */
+.tip-recon {
+  display: inline-block;
+  padding: 1px 4px;
+  margin-left: 4px;
+  border-radius: 4px;
+  background: #0284c7;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
 }
 
 /* ---------- Secret admin panel ---------- */
@@ -2154,3 +2242,202 @@ body.out-of-zone::after {
 .admin-player-name small { font-weight: 600; color: var(--muted); }
 .admin-player-actions { display: flex; gap: 6px; }
 .admin-player-actions .admin-btn { min-height: 44px; font-size: 12px; padding: 4px 6px; }
+
+/* ---------- Quick Presets Bar ---------- */
+.preset-group {
+  margin-top: 4px;
+}
+.preset-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 6px;
+}
+.preset-hint {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.preset-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.btn-preset {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #fff;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.btn-preset:active {
+  transform: scale(0.96);
+  background: rgba(255, 255, 255, 0.16);
+}
+.preset-icon {
+  font-size: 20px;
+  flex: none;
+}
+.preset-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.preset-name {
+  font-size: 13px;
+  font-weight: 800;
+  color: #fff;
+  line-height: 1.2;
+}
+.preset-detail {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+  line-height: 1.25;
+  margin-top: 2px;
+}
+
+/* ---------- Collapsible Accordion Sections ---------- */
+.settings-accordion {
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  margin-bottom: 8px;
+  transition: border-color 0.2s ease;
+}
+.settings-accordion[open] {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(0, 0, 0, 0.25);
+}
+.accordion-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 48px;
+  padding: 10px 14px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 13.5px;
+  font-weight: 800;
+  color: #fff;
+  list-style: none;
+}
+.accordion-summary::-webkit-details-marker {
+  display: none;
+}
+.accordion-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.accordion-chevron {
+  font-size: 14px;
+  color: var(--muted);
+  transition: transform 0.25s ease;
+}
+.settings-accordion[open] .accordion-chevron {
+  transform: rotate(180deg);
+  color: var(--accent);
+}
+.accordion-content {
+  padding: 4px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ---------- Custom Select Fields ---------- */
+.select-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.custom-select {
+  width: 100%;
+  min-height: 46px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: #0f172a;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.custom-select:focus {
+  border-color: var(--accent);
+}
+
+/* ---------- Last Man Standing Compact Top Banner ---------- */
+.lms-banner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  max-width: min(94vw, 440px);
+  padding: 8px 14px;
+  border-radius: 14px;
+  background: rgba(185, 28, 28, 0.95);
+  border: 1px solid rgba(254, 202, 202, 0.5);
+  box-shadow: 0 8px 24px rgba(220, 38, 38, 0.6), 0 0 16px rgba(239, 68, 68, 0.4);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #fff;
+  text-align: center;
+  animation: dropIn 0.35s cubic-bezier(0.2, 0.9, 0.25, 1.1), urgentPulse 1.2s infinite alternate;
+  pointer-events: none;
+}
+.lms-badge {
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  color: #fef08a;
+  text-transform: uppercase;
+}
+.lms-text {
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+/* Sudden Death Timer badge on Top HUD */
+.hud-pill.lms-active {
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.6), var(--shadow-lg) !important;
+  background: rgba(30, 8, 12, 0.92) !important;
+}
+#match-timer.sudden-death {
+  color: #f87171 !important;
+  text-shadow: 0 0 8px rgba(239, 68, 68, 0.8) !important;
+}
+
+/* Ping button in LMS mode */
+.ping-btn[data-mode="lms"] {
+  background: rgba(185, 28, 28, 0.25) !important;
+  border-color: #ef4444 !important;
+  color: #fca5a5 !important;
+  box-shadow: 0 0 14px rgba(239, 68, 68, 0.3) !important;
+  cursor: not-allowed;
+}
+
+/* Signal Low status on roster row */
+.roster-row.signal-low {
+  opacity: 0.65;
+}
+.roster-tag.signal-low {
+  background: rgba(234, 179, 8, 0.18) !important;
+  border: 1px solid rgba(234, 179, 8, 0.4) !important;
+  color: #facc15 !important;
+  font-size: 10px !important;
+}
