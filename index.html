@@ -22,39 +22,22 @@
   <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
 
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=5" />
 </head>
 
 <body>
   <!-- ===== Full-viewport map ===== -->
   <main id="map" aria-label="Live game map"></main>
 
-  <!-- ===== In-game HUD ===== -->
-  <header id="status-pill" class="status-pill hidden" aria-live="polite">
-    <span id="role-chip" class="role-chip">—</span>
-    <span class="pill-divider" aria-hidden="true"></span>
-    <span class="pill-stat" title="Active players">
-      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-        <path fill="currentColor"
-          d="M16 11a4 4 0 1 0-4-4 4 4 0 0 0 4 4Zm-8 0a3 3 0 1 0-3-3 3 3 0 0 0 3 3Zm8 2c-2.7 0-8 1.3-8 4v3h16v-3c0-2.7-5.3-4-8-4Zm-8 0c-.3 0-.7 0-1.1.1A4.8 4.8 0 0 1 9 17v3H0v-3c0-2.2 4.4-4 8-4Z" />
-      </svg>
-      <span id="player-count">0</span>
-    </span>
-    <span class="pill-divider" aria-hidden="true"></span>
-    <span class="pill-stat mono" title="Match timer">
-      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-        <path fill="currentColor" d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm1 10.4 3.5 2.1-.8 1.3L11 13V7h2Z" />
-      </svg>
-      <span id="game-timer">00:00</span>
-    </span>
-    <span id="runner-score-group" class="pill-stat-group hidden" title="Runners surviving">
-      <span class="pill-divider" aria-hidden="true"></span>
-      <span class="pill-stat mono">
-        <span aria-hidden="true">🏃</span>
-        <span id="runners-alive-count">0</span>/<span id="runners-total-count">0</span>
-      </span>
-    </span>
-  </header>
+  <!-- ===== In-game HUD: Unified Top Timer Pill ===== -->
+  <div id="top-hud-bar" class="hud-pill hidden" aria-live="polite">
+    <div id="role-chip" class="role-chip role-none" title="Current Role"><span class="chip-dot"></span><span id="role-text">--</span></div>
+    <span id="match-timer">00:00</span>
+    <span class="hud-divider">|</span>
+    <button id="roster-toggle-btn" class="hud-inline-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="roster-drawer">
+      👥 <span id="alive-count">-- Alive</span>
+    </button>
+  </div>
 
   <!-- Runner Tag Code display (shown only for runners) -->
   <div id="runner-code-badge" class="runner-tag-pill runner-code-badge hidden" role="region"
@@ -72,22 +55,6 @@
         <button id="self-tag-yes" class="danger-btn confirm-btn" type="button">Yes, I'm Caught</button>
         <button id="self-tag-cancel" class="btn btn-ghost confirm-btn" type="button">Cancel</button>
       </div>
-    </div>
-  </div>
-
-  <!-- Collapsible distance-to-border badge -->
-  <div id="dist-badge" class="dist-badge hidden">
-    <button id="dist-badge-btn" class="dist-badge-btn" type="button" aria-expanded="false"
-      aria-controls="dist-badge-card">
-      <span aria-hidden="true">🎯</span>
-      <span id="dist-badge-val" class="mono">--- ft</span>
-      <span id="dist-badge-chevron" class="dist-badge-chevron" aria-hidden="true">▼</span>
-    </button>
-    <div id="dist-badge-card" class="dist-badge-card hidden">
-      <div class="dist-badge-row"><span>Distance to Zone Center</span><b id="dist-badge-center" class="mono">-- ft</b>
-      </div>
-      <div class="dist-badge-row"><span>Safe Radius</span><b id="dist-badge-radius" class="mono">-- ft</b></div>
-      <div class="dist-badge-row"><span>Status</span><b id="dist-badge-status">—</b></div>
     </div>
   </div>
 
@@ -126,8 +93,19 @@
     </div>
   </div>
 
-  <!-- Banner stack: grace countdown, out-of-zone warning, GPS status -->
+  <!-- Banner stack: reconnect, grace countdown, out-of-zone warning, GPS status -->
   <div class="banner-stack">
+    <div id="reconnect-banner" class="reconnect-banner hidden" role="alert">
+      <span class="reconnect-dot"></span>
+      <span id="reconnect-banner-text">⚠️ Reconnecting to Server / GPS...</span>
+    </div>
+
+    <!-- Last Man Standing compact non-blocking banner directly below top HUD -->
+    <div id="lms-banner" class="lms-banner hidden" role="alert" aria-live="assertive">
+      <span class="lms-badge">⚡ LAST MAN STANDING</span>
+      <span id="lms-banner-text" class="lms-text">Sole survivor active! 5:00 on clock. Radar disabled. Zone closing at 200 ft/min.</span>
+    </div>
+
     <div id="grace-banner" class="grace-banner hidden" role="timer" aria-live="polite">
       <div class="grace-row">
         <span class="grace-icon" aria-hidden="true">⏳</span>
@@ -177,6 +155,7 @@
       <button id="caught-dismiss-btn" class="btn btn-primary" type="button">Spectate Match</button>
     </div>
   </div>
+
   <!-- Infection Takeover Overlay (runner just became a hunter) -->
   <div id="infected-overlay" class="infected-overlay hidden" role="alert" aria-live="assertive">
     <div class="infected-inner">
@@ -186,11 +165,7 @@
     </div>
   </div>
 
-  <!-- Collapsible player roster (floating pill + slide-up drawer) -->
-  <button id="roster-pill" class="roster-pill hidden" type="button" aria-haspopup="dialog" aria-expanded="false"
-    aria-controls="roster-drawer">
-    <span id="roster-pill-text">👥 Players (0 Alive)</span>
-  </button>
+  <!-- Collapsible player roster drawer -->
   <div id="roster-backdrop" class="roster-backdrop hidden"></div>
   <section id="roster-drawer" class="roster-drawer" role="dialog" aria-label="Player roster" aria-hidden="true">
     <div class="roster-header">
@@ -199,7 +174,6 @@
     </div>
     <div id="roster-body" class="roster-body"></div>
   </section>
-
 
   <!-- Match End / Game Over Winner Modal -->
   <div id="game-over-modal" class="game-over-modal hidden" role="dialog" aria-modal="true"
@@ -238,89 +212,6 @@
       <span class="gps-dot"></span><span id="gps-accuracy">— m</span>
     </div>
   </div>
-
-  <!-- ===== Right-side Distance Visual Gauge ===== -->
-  <aside id="distance-hud" class="distance-hud hidden" aria-label="Zone Distance Visual">
-    <div class="dist-card">
-      <div class="dist-header">
-        <div class="dist-title-group">
-          <span id="dist-indicator-dot" class="dist-indicator-dot"></span>
-          <span class="dist-title">DISTANCE</span>
-        </div>
-        <button id="dist-toggle-btn" class="dist-toggle-btn" type="button" aria-label="Toggle details">
-          <svg id="dist-toggle-icon" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-            <path fill="currentColor" d="M7 10l5 5 5-5z" />
-          </svg>
-        </button>
-      </div>
-
-      <!-- Main Readout: Distance to Zone Edge -->
-      <div class="dist-readout">
-        <div class="dist-edge-val-row">
-          <span id="dist-edge-num" class="dist-number mono">---</span>
-          <span class="dist-unit-sm">ft</span>
-        </div>
-        <span id="dist-edge-label" class="dist-label">TO SAFE BORDER</span>
-      </div>
-
-      <!-- Tactical Vertical Distance Ruler / Tape -->
-      <div class="dist-gauge-track-wrap">
-        <div class="dist-gauge-track">
-          <!-- Danger zone at top -->
-          <div class="dist-danger-zone" title="Danger Zone">
-            <span class="dist-zone-tag">OUT</span>
-          </div>
-
-          <!-- Safe zone border line -->
-          <div id="dist-border-line" class="dist-border-line" title="Safe Zone Perimeter">
-            <span class="dist-border-badge">PERIMETER</span>
-          </div>
-
-          <!-- Safe interior zone -->
-          <div id="dist-safe-interior" class="dist-safe-interior" title="Safe Zone Interior"></div>
-
-          <!-- Min Radius line -->
-          <div id="dist-min-line" class="dist-min-line" title="Minimum Radius Threshold">
-            <span class="dist-min-badge">MIN</span>
-          </div>
-
-          <!-- Zone center at bottom -->
-          <div class="dist-center-mark" title="Zone Center">
-            <span class="dist-center-badge">CENTER</span>
-          </div>
-
-          <!-- Player position marker sliding vertically along gauge -->
-          <div id="dist-player-pin" class="dist-player-pin" style="bottom: 50%;">
-            <div class="dist-pin-pointer"></div>
-            <div class="dist-pin-bubble">
-              <span class="dist-pin-dot"></span>
-              <span id="dist-pin-text" class="dist-pin-text mono">YOU</span>
-            </div>
-          </div>
-
-          <!-- Hunter target markers (closest runner, pings) -->
-          <div id="dist-targets-container" class="dist-targets-container"></div>
-        </div>
-      </div>
-
-      <!-- Collapsible Detailed Metrics -->
-      <div id="dist-details" class="dist-details">
-        <div class="dist-metric">
-          <span class="dist-metric-label">Center</span>
-          <span id="dist-from-center" class="dist-metric-val mono">-- ft</span>
-        </div>
-        <div class="dist-metric">
-          <span class="dist-metric-label">Radius</span>
-          <span id="dist-zone-radius" class="dist-metric-val mono">-- ft</span>
-        </div>
-        <div id="dist-target-row" class="dist-metric hidden">
-          <span id="dist-target-label" class="dist-metric-label">Target</span>
-          <span id="dist-target-val" class="dist-metric-val mono">-- ft</span>
-        </div>
-        <div id="dist-status-badge" class="dist-status-badge in-zone">SAFE</div>
-      </div>
-    </div>
-  </aside>
 
   <button id="recenter-btn" class="fab hidden" type="button" aria-label="Re-center map on me">
     <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
@@ -394,96 +285,186 @@
             <button id="hunter-plus" class="btn btn-step" type="button" aria-label="More hunters">+</button>
           </div>
 
-          <!-- Game & Zone Settings -->
-          <div id="zone-settings" class="zone-settings">
-            <h3 class="settings-title">Game &amp; Zone Settings</h3>
-
-            <!-- Match Duration Slider (controls total pings: 1 per 5 min) -->
-            <div class="slider-field">
-              <div class="slider-head">
-                <label for="duration-slider">⏱️ Match Duration</label>
-                <output id="duration-value" for="duration-slider" class="slider-value mono">Match Duration: 15
-                  min</output>
-              </div>
-              <input id="duration-slider" class="range" type="range" min="5" max="60" step="5" value="15" />
-              <div class="slider-scale"><span>5 min (1 ping)</span><span>60 min (12 pings)</span></div>
+          <!-- Quick Presets -->
+          <div class="preset-group">
+            <div class="preset-label-row">
+              <span class="field-label">Quick Presets</span>
+              <span class="preset-hint">1-tap match configs</span>
             </div>
-
-            <!-- Grace Period Slider -->
-            <div class="slider-field">
-              <div class="slider-head">
-                <label for="grace-slider">⏳ Grace Period</label>
-                <output id="grace-value" for="grace-slider" class="slider-value mono">Grace Period: 2:00</output>
-              </div>
-              <input id="grace-slider" class="range" type="range" min="30" max="300" step="15" value="120" />
-              <div class="slider-scale"><span>0:30</span><span>5:00</span></div>
-            </div>
-
-            <!-- Starting Radius Slider -->
-            <div class="slider-field">
-              <div class="slider-head">
-                <label for="radius-slider">⭕ Starting Radius</label>
-                <output id="radius-value" for="radius-slider" class="slider-value mono">Starting Radius: 1,500
-                  ft</output>
-              </div>
-              <input id="radius-slider" class="range range-zone" type="range" min="200" max="5000" step="50"
-                value="1500" />
-              <div class="slider-scale"><span>200 ft</span><span>5,000 ft</span></div>
-            </div>
-
-            <div class="preview-wrap">
-              <div id="zone-preview-map" class="zone-preview-map" aria-label="Safe zone preview map"></div>
-              <span id="zone-center-tag" class="preview-tag hidden">📍 Centered on you</span>
-              <button id="zone-recenter-btn" class="preview-reset hidden" type="button">Use my GPS</button>
-              <div id="zone-preview-status" class="preview-status">Locating you…</div>
-            </div>
-            <p class="preview-hint">Red = starting zone · Amber = final zone · Tap map to move center</p>
-
-            <!-- Toggle Checkbox: Game Mode -->
-            <div class="toggle-field">
-              <label class="toggle-label" for="infection-toggle">
-                <input id="infection-toggle" class="toggle-checkbox" type="checkbox" checked />
-                <span class="toggle-custom"></span>
-                <span class="toggle-label-wrap">
-                  <span class="toggle-label-text">Game Mode: Classic Elimination / Infection Mode</span>
-                  <span class="toggle-subtext">When enabled, tagged runners instantly become hunters.</span>
+            <div class="preset-row">
+              <button id="preset-blitz" class="btn btn-preset" type="button">
+                <span class="preset-icon">⚡</span>
+                <span class="preset-body">
+                  <span class="preset-name">Quick Blitz</span>
+                  <span class="preset-detail">10m · 45s grace · 150'/m · Drops OFF</span>
                 </span>
-              </label>
+              </button>
+              <button id="preset-tactical" class="btn btn-preset" type="button">
+                <span class="preset-icon">🌲</span>
+                <span class="preset-body">
+                  <span class="preset-name">Big Park Tactical</span>
+                  <span class="preset-detail">20m · 90s grace · 100'/m · Drops ON</span>
+                </span>
+              </button>
             </div>
+          </div>
 
-            <!-- Toggle Checkbox: Enable Zone Shrinking -->
-            <div class="toggle-field">
-              <label class="toggle-label" for="shrink-toggle">
-                <input id="shrink-toggle" class="toggle-checkbox" type="checkbox" checked />
-                <span class="toggle-custom"></span>
-                <span class="toggle-label-text">Enable Zone Shrinking</span>
-              </label>
-            </div>
+          <!-- Streamlined Accordion Settings -->
+          <div id="zone-settings" class="zone-settings">
+            <!-- Section 1: Match Timing & Rules -->
+            <details class="settings-accordion" open>
+              <summary class="accordion-summary">
+                <span class="accordion-title">⏱️ Section 1: Match Timing &amp; Rules</span>
+                <span class="accordion-chevron" aria-hidden="true">▾</span>
+              </summary>
+              <div class="accordion-content">
+                <!-- Match Duration Slider (5–30m) -->
+                <div class="slider-field">
+                  <div class="slider-head">
+                    <label for="duration-slider">Match Duration</label>
+                    <output id="duration-value" for="duration-slider" class="slider-value mono">Match Duration: 15 min</output>
+                  </div>
+                  <input id="duration-slider" class="range" type="range" min="5" max="30" step="5" value="15" />
+                  <div class="slider-scale"><span>5 min (1 ping)</span><span>30 min (6 pings)</span></div>
+                </div>
 
-            <!-- Minimum Final Radius Slider -->
-            <div id="min-radius-group" class="slider-field">
-              <div class="slider-head">
-                <label for="min-radius-slider">🎯 Min Radius</label>
-                <output id="min-radius-value" for="min-radius-slider" class="slider-value mono">Min Radius: 100
-                  ft</output>
+                <!-- Grace Period Slider (30–180s) -->
+                <div class="slider-field">
+                  <div class="slider-head">
+                    <label for="grace-slider">Grace Period</label>
+                    <output id="grace-value" for="grace-slider" class="slider-value mono">Grace Period: 1:30</output>
+                  </div>
+                  <input id="grace-slider" class="range" type="range" min="30" max="180" step="15" value="90" />
+                  <div class="slider-scale"><span>0:30</span><span>3:00</span></div>
+                </div>
+
+                <!-- Game Mode Toggle: Infection Mode -->
+                <div class="toggle-field">
+                  <label class="toggle-label" for="infection-toggle">
+                    <input id="infection-toggle" class="toggle-checkbox" type="checkbox" checked />
+                    <span class="toggle-custom"></span>
+                    <span class="toggle-label-wrap">
+                      <span class="toggle-label-text">Game Mode: Infection Mode</span>
+                      <span class="toggle-subtext">When enabled, tagged runners instantly become hunters.</span>
+                    </span>
+                  </label>
+                </div>
               </div>
-              <input id="min-radius-slider" class="range range-min" type="range" min="50" max="500" step="25"
-                value="100" />
-              <div class="slider-scale"><span>50 ft</span><span>500 ft</span></div>
-            </div>
+            </details>
 
-            <!-- Shrink Speed Slider (range 1 to 300 ft/min, step 1) -->
-            <div id="shrink-speed-group" class="slider-field">
-              <div class="slider-head">
-                <label for="shrink-slider">📉 Shrink Speed</label>
-                <output id="shrink-value" for="shrink-slider" class="slider-value mono">Shrink Speed: 150
-                  ft/min</output>
+            <!-- Section 2: Zone & Balance -->
+            <details class="settings-accordion" open>
+              <summary class="accordion-summary">
+                <span class="accordion-title">⭕ Section 2: Zone &amp; Balance</span>
+                <span class="accordion-chevron" aria-hidden="true">▾</span>
+              </summary>
+              <div class="accordion-content">
+                <!-- Shrink Pace Dropdown -->
+                <div class="select-field">
+                  <label for="shrink-pace-select" class="field-label">Zone Shrink Pace</label>
+                  <select id="shrink-pace-select" class="custom-select">
+                    <option value="50">Casual — 50 ft/min</option>
+                    <option value="100">Standard — 100 ft/min</option>
+                    <option value="150" selected>Fast — 150 ft/min</option>
+                    <option value="200">Intense — 200 ft/min</option>
+                    <option value="250">Extreme — 250 ft/min</option>
+                  </select>
+                </div>
+
+                <!-- Out-of-Bounds Penalty Dropdown -->
+                <div class="select-field">
+                  <label for="oob-penalty-select" class="field-label">Out-of-Bounds Penalty</label>
+                  <select id="oob-penalty-select" class="custom-select">
+                    <option value="standard" selected>Standard (Instant Radar Exposure)</option>
+                    <option value="siren">Exposure + Audible Siren Sweep</option>
+                    <option value="strict">Strict (Exposure + Fast Auto-Elimination Warning)</option>
+                  </select>
+                </div>
+
+                <!-- Mid-Game Supply Drops Toggle -->
+                <div class="toggle-field">
+                  <label class="toggle-label" for="supply-drop-toggle">
+                    <input id="supply-drop-toggle" class="toggle-checkbox" type="checkbox" checked />
+                    <span class="toggle-custom"></span>
+                    <span class="toggle-label-wrap">
+                      <span class="toggle-label-text">Enable Mid-Game Supply Drops</span>
+                      <span class="toggle-subtext">Spawns a golden crate at match midpoint inside the safe zone.</span>
+                    </span>
+                  </label>
+                </div>
+
+                <!-- Starting Radius Slider -->
+                <div class="slider-field">
+                  <div class="slider-head">
+                    <label for="radius-slider">⭕ Starting Radius</label>
+                    <output id="radius-value" for="radius-slider" class="slider-value mono">Starting Radius: 1,500 ft</output>
+                  </div>
+                  <input id="radius-slider" class="range range-zone" type="range" min="200" max="5000" step="50"
+                    value="1500" />
+                  <div class="slider-scale"><span>200 ft</span><span>5,000 ft</span></div>
+                </div>
+
+                <div class="preview-wrap">
+                  <div id="zone-preview-map" class="zone-preview-map" aria-label="Safe zone preview map"></div>
+                  <span id="zone-center-tag" class="preview-tag hidden">📍 Centered on you</span>
+                  <button id="zone-recenter-btn" class="preview-reset hidden" type="button">Use my GPS</button>
+                  <div id="zone-preview-status" class="preview-status">Locating you…</div>
+                </div>
+                <p class="preview-hint">Red = starting zone · Amber = final zone · Tap map to move center</p>
+
+                <!-- Toggle Checkbox: Enable Zone Shrinking -->
+                <div class="toggle-field">
+                  <label class="toggle-label" for="shrink-toggle">
+                    <input id="shrink-toggle" class="toggle-checkbox" type="checkbox" checked />
+                    <span class="toggle-custom"></span>
+                    <span class="toggle-label-text">Enable Zone Shrinking</span>
+                  </label>
+                </div>
+
+                <!-- Minimum Final Radius Slider -->
+                <div id="min-radius-group" class="slider-field">
+                  <div class="slider-head">
+                    <label for="min-radius-slider">🎯 Min Radius</label>
+                    <output id="min-radius-value" for="min-radius-slider" class="slider-value mono">Min Radius: 100 ft</output>
+                  </div>
+                  <input id="min-radius-slider" class="range range-min" type="range" min="50" max="500" step="25"
+                    value="100" />
+                  <div class="slider-scale"><span>50 ft</span><span>500 ft</span></div>
+                </div>
+
+                <!-- Hidden synced shrink slider for legacy bindings -->
+                <div id="shrink-speed-group" class="slider-field hidden">
+                  <div class="slider-head">
+                    <label for="shrink-slider">📉 Shrink Speed</label>
+                    <output id="shrink-value" for="shrink-slider" class="slider-value mono">Shrink Speed: 150 ft/min</output>
+                  </div>
+                  <input id="shrink-slider" class="range" type="range" min="1" max="300" step="1" value="150" />
+                </div>
+
+                <p id="zone-summary" class="zone-summary"></p>
               </div>
-              <input id="shrink-slider" class="range" type="range" min="1" max="300" step="1" value="150" />
-              <div class="slider-scale"><span>1 ft/min</span><span>300 ft/min</span></div>
-            </div>
+            </details>
 
-            <p id="zone-summary" class="zone-summary"></p>
+            <!-- Section 3: Endgame Events -->
+            <details class="settings-accordion" open>
+              <summary class="accordion-summary">
+                <span class="accordion-title">⚡ Section 3: Endgame Events</span>
+                <span class="accordion-chevron" aria-hidden="true">▾</span>
+              </summary>
+              <div class="accordion-content">
+                <!-- Toggle Checkbox: Last Man Standing -->
+                <div class="toggle-field">
+                  <label class="toggle-label" for="lms-toggle">
+                    <input id="lms-toggle" class="toggle-checkbox" type="checkbox" checked />
+                    <span class="toggle-custom"></span>
+                    <span class="toggle-label-wrap">
+                      <span class="toggle-label-text">Enable Last Man Standing</span>
+                      <span class="toggle-subtext">When only 1 runner remains, triggers 5:00 sudden death, disables hunter radar, and accelerates zone shrink to 200 ft/min.</span>
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </details>
           </div>
 
           <button id="start-btn" class="btn btn-start btn-block" type="button">
@@ -518,7 +499,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=5"></script>
 </body>
 
 </html>
