@@ -57,16 +57,71 @@
   </header>
 
   <!-- Runner Tag Code display (shown only for runners) -->
-  <div id="runner-tag-pill" class="runner-tag-pill hidden" role="region" aria-label="Your secret tag code">
-    <span class="tag-label">YOUR TAG CODE:</span>
-    <span id="runner-tag-code" class="tag-code-box mono">[ ---- ]</span>
+  <div id="runner-code-badge" class="runner-tag-pill runner-code-badge hidden" role="region"
+    aria-label="Your secret tag code">
+    YOUR CODE: <span id="my-code-val" class="my-code-val mono">----</span>
+  </div>
+
+  <!-- Runner honor button: self-report being tagged -->
+  <button id="self-tag-btn" class="danger-btn hidden" type="button">🏳️ I Was Tagged</button>
+  <div id="self-tag-confirm" class="confirm-modal hidden" role="alertdialog" aria-modal="true"
+    aria-labelledby="self-tag-confirm-text">
+    <div class="confirm-card">
+      <p id="self-tag-confirm-text" class="confirm-text">Confirm you were caught?</p>
+      <div class="confirm-actions">
+        <button id="self-tag-yes" class="danger-btn confirm-btn" type="button">Yes, I'm Caught</button>
+        <button id="self-tag-cancel" class="btn btn-ghost confirm-btn" type="button">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Collapsible distance-to-border badge -->
+  <div id="dist-badge" class="dist-badge hidden">
+    <button id="dist-badge-btn" class="dist-badge-btn" type="button" aria-expanded="false"
+      aria-controls="dist-badge-card">
+      <span aria-hidden="true">🎯</span>
+      <span id="dist-badge-val" class="mono">--- ft</span>
+      <span id="dist-badge-chevron" class="dist-badge-chevron" aria-hidden="true">▼</span>
+    </button>
+    <div id="dist-badge-card" class="dist-badge-card hidden">
+      <div class="dist-badge-row"><span>Distance to Zone Center</span><b id="dist-badge-center" class="mono">-- ft</b>
+      </div>
+      <div class="dist-badge-row"><span>Safe Radius</span><b id="dist-badge-radius" class="mono">-- ft</b></div>
+      <div class="dist-badge-row"><span>Status</span><b id="dist-badge-status">—</b></div>
+    </div>
+  </div>
+
+  <!-- Secret field admin panel (opened by entering 9999 in the tag input) -->
+  <div id="secret-admin-panel" class="admin-panel hidden" role="dialog" aria-modal="true" aria-labelledby="admin-title">
+    <div class="admin-card">
+      <div class="admin-header">
+        <h2 id="admin-title">🛠️ Field Admin Controls</h2>
+        <button id="admin-close" class="admin-close" type="button" aria-label="Close admin panel">✕</button>
+      </div>
+      <h3 class="admin-section">Global Radar</h3>
+      <button id="admin-omni" class="admin-btn" type="button">📡 Reveal All Runners (15s)</button>
+      <h3 class="admin-section">Safe Zone</h3>
+      <button id="admin-pause" class="admin-btn" type="button">⏸️ Pause / Resume Zone Shrink</button>
+      <div class="admin-row">
+        <button id="admin-expand" class="admin-btn" type="button">⏪ Expand Zone (+250 ft)</button>
+        <button id="admin-shrink" class="admin-btn" type="button">⏩ Shrink Zone (-250 ft)</button>
+      </div>
+      <h3 class="admin-section">Match Clock</h3>
+      <div class="admin-row">
+        <button id="admin-addtime" class="admin-btn" type="button">⏳ Add 5 Minutes to Clock</button>
+        <button id="admin-end" class="admin-btn admin-btn-danger" type="button">⏹️ End Match Immediately</button>
+      </div>
+      <h3 class="admin-section">Players</h3>
+      <div id="admin-player-list" class="admin-player-list"></div>
+    </div>
   </div>
 
   <!-- Hunter Tag Submission Bar (shown only for hunters) -->
   <div id="hunter-tag-bar" class="hunter-tag-bar hidden" role="region" aria-label="Tag runner">
     <div class="hunter-tag-card">
       <span class="hunter-tag-title">TAG RUNNER:</span>
-      <input id="tag-code-input" class="tag-code-input mono" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="4-digit code" enterkeyhint="done" aria-label="Runner 4 digit code" />
+      <input id="tag-code-input" class="tag-code-input mono" type="text" inputmode="numeric" pattern="[0-9]*"
+        maxlength="4" placeholder="4-digit code" enterkeyhint="done" aria-label="Runner 4 digit code" />
       <button id="tag-submit-btn" class="btn btn-tag" type="button">SUBMIT TAG</button>
     </div>
   </div>
@@ -79,7 +134,9 @@
         <span id="grace-text" class="grace-text mono">GRACE PERIOD: 02:00 REMAINING</span>
       </div>
       <span id="grace-sub" class="grace-sub">Runners — scatter and hide now!</span>
-      <div class="grace-progress"><div id="grace-progress-bar" class="grace-progress-bar"></div></div>
+      <div class="grace-progress">
+        <div id="grace-progress-bar" class="grace-progress-bar"></div>
+      </div>
     </div>
 
     <div id="zone-banner" class="zone-banner hidden" role="alert">
@@ -130,7 +187,8 @@
   </div>
 
   <!-- Collapsible player roster (floating pill + slide-up drawer) -->
-  <button id="roster-pill" class="roster-pill hidden" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="roster-drawer">
+  <button id="roster-pill" class="roster-pill hidden" type="button" aria-haspopup="dialog" aria-expanded="false"
+    aria-controls="roster-drawer">
     <span id="roster-pill-text">👥 Players (0 Alive)</span>
   </button>
   <div id="roster-backdrop" class="roster-backdrop hidden"></div>
@@ -144,7 +202,8 @@
 
 
   <!-- Match End / Game Over Winner Modal -->
-  <div id="game-over-modal" class="game-over-modal hidden" role="dialog" aria-modal="true" aria-labelledby="winner-title">
+  <div id="game-over-modal" class="game-over-modal hidden" role="dialog" aria-modal="true"
+    aria-labelledby="winner-title">
     <div class="game-over-card">
       <div id="winner-trophy" class="winner-trophy" aria-hidden="true">🏆</div>
       <h2 id="winner-title" class="winner-title">HUNTERS WIN!</h2>
@@ -190,7 +249,7 @@
         </div>
         <button id="dist-toggle-btn" class="dist-toggle-btn" type="button" aria-label="Toggle details">
           <svg id="dist-toggle-icon" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-            <path fill="currentColor" d="M7 10l5 5 5-5z"/>
+            <path fill="currentColor" d="M7 10l5 5 5-5z" />
           </svg>
         </button>
       </div>
@@ -343,7 +402,8 @@
             <div class="slider-field">
               <div class="slider-head">
                 <label for="duration-slider">⏱️ Match Duration</label>
-                <output id="duration-value" for="duration-slider" class="slider-value mono">Match Duration: 15 min</output>
+                <output id="duration-value" for="duration-slider" class="slider-value mono">Match Duration: 15
+                  min</output>
               </div>
               <input id="duration-slider" class="range" type="range" min="5" max="60" step="5" value="15" />
               <div class="slider-scale"><span>5 min (1 ping)</span><span>60 min (12 pings)</span></div>
@@ -363,7 +423,8 @@
             <div class="slider-field">
               <div class="slider-head">
                 <label for="radius-slider">⭕ Starting Radius</label>
-                <output id="radius-value" for="radius-slider" class="slider-value mono">Starting Radius: 1,500 ft</output>
+                <output id="radius-value" for="radius-slider" class="slider-value mono">Starting Radius: 1,500
+                  ft</output>
               </div>
               <input id="radius-slider" class="range range-zone" type="range" min="200" max="5000" step="50"
                 value="1500" />
@@ -403,7 +464,8 @@
             <div id="min-radius-group" class="slider-field">
               <div class="slider-head">
                 <label for="min-radius-slider">🎯 Min Radius</label>
-                <output id="min-radius-value" for="min-radius-slider" class="slider-value mono">Min Radius: 100 ft</output>
+                <output id="min-radius-value" for="min-radius-slider" class="slider-value mono">Min Radius: 100
+                  ft</output>
               </div>
               <input id="min-radius-slider" class="range range-min" type="range" min="50" max="500" step="25"
                 value="100" />
@@ -414,7 +476,8 @@
             <div id="shrink-speed-group" class="slider-field">
               <div class="slider-head">
                 <label for="shrink-slider">📉 Shrink Speed</label>
-                <output id="shrink-value" for="shrink-slider" class="slider-value mono">Shrink Speed: 150 ft/min</output>
+                <output id="shrink-value" for="shrink-slider" class="slider-value mono">Shrink Speed: 150
+                  ft/min</output>
               </div>
               <input id="shrink-slider" class="range" type="range" min="1" max="300" step="1" value="150" />
               <div class="slider-scale"><span>1 ft/min</span><span>300 ft/min</span></div>
