@@ -120,6 +120,28 @@
       <button id="caught-dismiss-btn" class="btn btn-primary" type="button">Spectate Match</button>
     </div>
   </div>
+  <!-- Infection Takeover Overlay (runner just became a hunter) -->
+  <div id="infected-overlay" class="infected-overlay hidden" role="alert" aria-live="assertive">
+    <div class="infected-inner">
+      <div class="infected-icon" aria-hidden="true">☣️</div>
+      <h2 class="infected-title">YOU HAVE BEEN INFECTED!</h2>
+      <p class="infected-sub">YOU ARE NOW A HUNTER.</p>
+    </div>
+  </div>
+
+  <!-- Collapsible player roster (floating pill + slide-up drawer) -->
+  <button id="roster-pill" class="roster-pill hidden" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="roster-drawer">
+    <span id="roster-pill-text">👥 Players (0 Alive)</span>
+  </button>
+  <div id="roster-backdrop" class="roster-backdrop hidden"></div>
+  <section id="roster-drawer" class="roster-drawer" role="dialog" aria-label="Player roster" aria-hidden="true">
+    <div class="roster-header">
+      <span id="roster-summary" class="roster-summary">Hunters (0) | Runners Left (0)</span>
+      <button id="roster-close" class="roster-close" type="button" aria-label="Close roster">✕</button>
+    </div>
+    <div id="roster-body" class="roster-body"></div>
+  </section>
+
 
   <!-- Match End / Game Over Winner Modal -->
   <div id="game-over-modal" class="game-over-modal hidden" role="dialog" aria-modal="true" aria-labelledby="winner-title">
@@ -133,7 +155,7 @@
           <span id="stat-survivors" class="stat-val mono">0</span>
         </div>
         <div class="stat-box">
-          <span class="stat-label">Eliminated</span>
+          <span id="stat-eliminated-label" class="stat-label">Eliminated</span>
           <span id="stat-eliminated" class="stat-val mono">0</span>
         </div>
       </div>
@@ -355,6 +377,18 @@
               <div id="zone-preview-status" class="preview-status">Locating you…</div>
             </div>
             <p class="preview-hint">Red = starting zone · Amber = final zone · Tap map to move center</p>
+
+            <!-- Toggle Checkbox: Game Mode -->
+            <div class="toggle-field">
+              <label class="toggle-label" for="infection-toggle">
+                <input id="infection-toggle" class="toggle-checkbox" type="checkbox" checked />
+                <span class="toggle-custom"></span>
+                <span class="toggle-label-wrap">
+                  <span class="toggle-label-text">Game Mode: Classic Elimination / Infection Mode</span>
+                  <span class="toggle-subtext">When enabled, tagged runners instantly become hunters.</span>
+                </span>
+              </label>
+            </div>
 
             <!-- Toggle Checkbox: Enable Zone Shrinking -->
             <div class="toggle-field">
