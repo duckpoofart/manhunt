@@ -104,12 +104,22 @@ const S = {
   // Safe zone
   distFeet: null,
   exposed: false,
-  // Hunter radar
+  lastSirenAt: 0,
+  // Hunter radar & Supply drops
   pingKey: null,
   pingsUsed: 0,
   pingCooldownUntil: 0,
   pingRevealUntil: 0,
   pingWasActive: false,
+  lastHandledPingAt: null,
+  hunterReconUntil: 0,
+  supplyDropMarker: null,
+  collectingDrop: false,
+  lastHeartbeatAt: 0,
+  // Last Man Standing
+  lmsHandled: false,
+  lmsBannerTimer: null,
+  lmsTriggerPending: false,
   // Infection mode
   infectPending: false,   // 3 s takeover overlay still showing → keep runner UI
   infectedHandled: null,  // infectedAt value we've already reacted to
@@ -146,7 +156,9 @@ const el = {
   startBtn: $('start-btn'),
   guestWait: $('guest-wait'),
   leaveBtn: $('leave-btn'),
-  // Host settings
+  // Presets & Host settings
+  presetBlitz: $('preset-blitz'),
+  presetTactical: $('preset-tactical'),
   durationSlider: $('duration-slider'),
   durationValue: $('duration-value'),
   graceSlider: $('grace-slider'),
@@ -154,6 +166,10 @@ const el = {
   radiusSlider: $('radius-slider'),
   radiusValue: $('radius-value'),
   shrinkToggle: $('shrink-toggle'),
+  shrinkPaceSelect: $('shrink-pace-select'),
+  oobPenaltySelect: $('oob-penalty-select'),
+  supplyDropToggle: $('supply-drop-toggle'),
+  lmsToggle: $('lms-toggle'),
   minRadiusGroup: $('min-radius-group'),
   minRadiusSlider: $('min-radius-slider'),
   minRadiusValue: $('min-radius-value'),
@@ -166,27 +182,20 @@ const el = {
   zoneCenterTag: $('zone-center-tag'),
   zoneRecenterBtn: $('zone-recenter-btn'),
   // HUD
-  statusPill: $('status-pill'),
+  topHudBar: $('top-hud-bar'),
+  statusPill: $('top-hud-bar'),
   roleChip: $('role-chip'),
-  playerCount: $('player-count'),
-  gameTimer: $('game-timer'),
-  runnerScoreGroup: $('runner-score-group'),
-  runnersAliveCount: $('runners-alive-count'),
-  runnersTotalCount: $('runners-total-count'),
+  matchTimer: $('match-timer'),
+  gameTimer: $('match-timer'),
+  rosterToggleBtn: $('roster-toggle-btn'),
+  aliveCount: $('alive-count'),
+  playerCount: $('alive-count'),
   runnerTagPill: $('runner-code-badge'),
   runnerTagCode: $('my-code-val'),
   selfTagBtn: $('self-tag-btn'),
   selfTagConfirm: $('self-tag-confirm'),
   selfTagYes: $('self-tag-yes'),
   selfTagCancel: $('self-tag-cancel'),
-  distBadge: $('dist-badge'),
-  distBadgeBtn: $('dist-badge-btn'),
-  distBadgeVal: $('dist-badge-val'),
-  distBadgeChevron: $('dist-badge-chevron'),
-  distBadgeCard: $('dist-badge-card'),
-  distBadgeCenter: $('dist-badge-center'),
-  distBadgeRadius: $('dist-badge-radius'),
-  distBadgeStatus: $('dist-badge-status'),
   adminPanel: $('secret-admin-panel'),
   adminClose: $('admin-close'),
   adminOmni: $('admin-omni'),
@@ -209,6 +218,9 @@ const el = {
   statSurvivors: $('stat-survivors'),
   statEliminated: $('stat-eliminated'),
   gameOverLobbyBtn: $('game-over-lobby-btn'),
+  reconnectBanner: $('reconnect-banner'),
+  lmsBanner: $('lms-banner'),
+  lmsBannerText: $('lms-banner-text'),
   graceBanner: $('grace-banner'),
   graceText: $('grace-text'),
   graceSub: $('grace-sub'),
@@ -233,29 +245,9 @@ const el = {
   revealRole: $('reveal-role'),
   revealSub: $('reveal-sub'),
   toastStack: $('toast-stack'),
-  // Right-side Distance Visual HUD
-  distanceHud: $('distance-hud'),
-  distIndicatorDot: $('dist-indicator-dot'),
-  distToggleBtn: $('dist-toggle-btn'),
-  distEdgeNum: $('dist-edge-num'),
-  distEdgeLabel: $('dist-edge-label'),
-  distBorderLine: $('dist-border-line'),
-  distMinLine: $('dist-min-line'),
-  distPlayerPin: $('dist-player-pin'),
-  distPinText: $('dist-pin-text'),
-  distTargetsContainer: $('dist-targets-container'),
-  distDetails: $('dist-details'),
-  distFromCenter: $('dist-from-center'),
-  distZoneRadius: $('dist-zone-radius'),
-  distTargetRow: $('dist-target-row'),
-  distTargetLabel: $('dist-target-label'),
-  distTargetVal: $('dist-target-val'),
-  distStatusBadge: $('dist-status-badge'),
   infectionToggle: $('infection-toggle'),
   infectedOverlay: $('infected-overlay'),
   statEliminatedLabel: $('stat-eliminated-label'),
-  rosterPill: $('roster-pill'),
-  rosterPillText: $('roster-pill-text'),
   rosterBackdrop: $('roster-backdrop'),
   rosterDrawer: $('roster-drawer'),
   rosterSummary: $('roster-summary'),
@@ -313,6 +305,133 @@ function formatMSS(sec) {
 const fmtFt = (ft) => Math.round(ft).toLocaleString();
 
 function vibrate(pattern) { if (navigator.vibrate) navigator.vibrate(pattern); }
+
+/* ---------- Web Audio API Cues ---------- */
+let audioCtx = null;
+function getAudioCtx() {
+  if (!audioCtx && (window.AudioContext || window.webkitAudioContext)) {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    audioCtx = new AudioCtx();
+  }
+  if (audioCtx && audioCtx.state === 'suspended') {
+    audioCtx.resume().catch(() => {});
+  }
+  return audioCtx;
+}
+['click', 'touchstart', 'keydown'].forEach((ev) => {
+  window.addEventListener(ev, () => { getAudioCtx(); }, { once: true, passive: true });
+});
+
+/** Out-of-Bounds Siren: descending dual-tone sweep (800Hz to 400Hz) paired with navigator.vibrate([300, 100, 300, 100, 300]) */
+function playSiren() {
+  try {
+    const ctx = getAudioCtx();
+    if (ctx) {
+      const now = ctx.currentTime;
+      const osc1 = ctx.createOscillator();
+      const osc2 = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc1.type = 'sawtooth';
+      osc2.type = 'triangle';
+
+      osc1.frequency.setValueAtTime(800, now);
+      osc1.frequency.exponentialRampToValueAtTime(400, now + 0.8);
+
+      osc2.frequency.setValueAtTime(808, now);
+      osc2.frequency.exponentialRampToValueAtTime(404, now + 0.8);
+
+      gain.gain.setValueAtTime(0.2, now);
+      gain.gain.linearRampToValueAtTime(0.01, now + 0.85);
+
+      osc1.connect(gain);
+      osc2.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc1.start(now);
+      osc2.start(now);
+      osc1.stop(now + 0.9);
+      osc2.stop(now + 0.9);
+    }
+  } catch (err) {}
+  vibrate([300, 100, 300, 100, 300]);
+}
+
+/** Radar Ping Sonar: soft 1200Hz sonar chime and brief vibrate pattern ([80, 50, 80]) on runner devices */
+function playSonarChime() {
+  try {
+    const ctx = getAudioCtx();
+    if (ctx) {
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(1200, now);
+
+      gain.gain.setValueAtTime(0.22, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.65);
+    }
+  } catch (err) {}
+  vibrate([80, 50, 80]);
+}
+
+/** Proximity Heartbeat: low 150Hz pulse and subtle vibration ([50]) */
+function playHeartbeatPulse() {
+  try {
+    const ctx = getAudioCtx();
+    if (ctx) {
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(150, now);
+
+      gain.gain.setValueAtTime(0.35, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.4);
+    }
+  } catch (err) {}
+  vibrate([50]);
+}
+
+/** Last Man Standing Alert: low alert tone and haptic vibration ([100, 50, 100, 50, 300]) */
+function playLmsAlertTone() {
+  try {
+    const ctx = getAudioCtx();
+    if (ctx) {
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(260, now);
+      osc.frequency.exponentialRampToValueAtTime(140, now + 0.6);
+
+      gain.gain.setValueAtTime(0.3, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.65);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.7);
+    }
+  } catch (err) {}
+  vibrate([100, 50, 100, 50, 300]);
+}
 
 /** Unbiased random integer in [0, max) using crypto + rejection sampling. */
 function randomInt(max) {
@@ -432,6 +551,7 @@ const omniActive = () => Date.now() < S.omniUntil;
 function isVisibleToMe(id, p) {
   if (id === PLAYER_ID) return true;
   if (omniActive() && p.role === 'runner' && !p.eliminated) return true; // admin Omni-Ping
+  if (Date.now() < S.hunterReconUntil && p.role === 'hunter' && !p.eliminated) return true; // Runner Recon
   if (p.eliminated && myRole() === 'hunter') return false;
   if (myRole() !== 'hunter') return true;
   if (p.role === 'hunter') return true;
@@ -455,18 +575,21 @@ function renderMarkers() {
     const role = p.role === 'hunter' || p.role === 'runner' ? p.role : 'none';
     const exposed = phase() === STATUS.PLAYING && (isMe ? S.exposed : p.exposed === true);
     const outOfBounds = p.role === 'runner' && exposed;
+    const isRecon = Date.now() < S.hunterReconUntil && role === 'hunter' && !isMe;
 
     const style = {
       radius: isMe ? 12 : 10,
-      color: outOfBounds ? '#ffffff' : (exposed ? ZONE_COLOR : '#ffffff'),
+      color: outOfBounds ? '#ffffff' : (isRecon ? '#38bdf8' : (exposed ? ZONE_COLOR : '#ffffff')),
       weight: isMe ? 4 : 3,
-      fillColor: outOfBounds ? '#ef4444' : COLORS[role],
+      fillColor: outOfBounds ? '#ef4444' : (isRecon ? '#0284c7' : COLORS[role]),
       fillOpacity: 1,
     };
 
     let label;
     if (outOfBounds) {
       label = `<span class="tip tip-runner tip-out-of-bounds">${escapeHtml(p.name)} (OUT OF BOUNDS)</span>`;
+    } else if (isRecon) {
+      label = `<span class="tip tip-hunter tip-recon">🎯 ${escapeHtml(p.name)} (RECON)</span>`;
     } else {
       label = `<span class="tip tip-${role}${isMe ? ' tip-me' : ''}${exposed ? ' tip-exposed' : ''}">`
         + `${exposed ? '⚠️ ' : ''}${escapeHtml(p.name)}${isMe ? ' (You)' : ''}</span>`;
@@ -583,6 +706,9 @@ function initFirebase() {
 /** (Re)registers presence every time the socket (re)connects. */
 function onConnectionChange(snap) {
   S.connected = snap.val() === true;
+  if (el.reconnectBanner) {
+    el.reconnectBanner.classList.toggle('hidden', S.connected);
+  }
   if (!S.connected) {
     if (S.joined) toast('Connection lost — reconnecting…', 'warn');
     return;
@@ -592,22 +718,30 @@ function onConnectionChange(snap) {
 }
 
 async function registerPresence() {
-  // onDisconnect is executed by the server when this client drops — cleans up ghosts.
-  await meRef.onDisconnect().remove();
-  if (isHost()) await stateRef.child('hostId').onDisconnect().remove();
+  // Prevent background disconnects / screen lock from removing players or dropping host privileges.
+  try {
+    await meRef.onDisconnect().cancel();
+    if (isHost()) await stateRef.child('hostId').onDisconnect().cancel();
+  } catch (err) {}
 
   const role = isActive() ? (myRole() || restoreRole() || 'runner') : null;
   const existing = me();
-  await meRef.set({
+  const updateData = {
     name: S.name,
     joinedAt: existing?.joinedAt || firebase.database.ServerValue.TIMESTAMP,
-    role,
     exposed: S.exposed,
-    lat: S.myPos?.lat ?? null,
-    lng: S.myPos?.lng ?? null,
-    acc: S.myPos ? Math.round(S.myPos.acc) : null,
+    lastSeen: firebase.database.ServerValue.TIMESTAMP,
     updatedAt: firebase.database.ServerValue.TIMESTAMP,
-  });
+  };
+  if (role && !existing?.role) {
+    updateData.role = role;
+  }
+  if (S.myPos) {
+    updateData.lat = S.myPos.lat;
+    updateData.lng = S.myPos.lng;
+    updateData.acc = Math.round(S.myPos.acc);
+  }
+  await meRef.update(updateData);
 }
 
 /* ---------------------------------------------------------
@@ -631,11 +765,31 @@ function onRoomSnapshot(snap) {
   }
   S.activityPrimed = true;
 
+  // Radar Ping Sonar chime for runners when a hunter fires ping
+  if (S.room.lastPingAt && S.room.lastPingAt !== S.lastHandledPingAt) {
+    if (S.lastHandledPingAt !== null && S.joined && S.inGame && myRole() === 'runner' && phase() === STATUS.PLAYING) {
+      playSonarChime();
+    }
+    S.lastHandledPingAt = S.room.lastPingAt;
+  }
+
   // Did I just get infected?
   const mine = S.players[PLAYER_ID];
   if (S.joined && S.inGame && mine?.infectedAt && S.infectedHandled !== mine.infectedAt) {
     S.infectedHandled = mine.infectedAt;
     if (Date.now() - mine.infectedAt < 15000) triggerInfection();
+  }
+
+  // Last Man Standing activation check
+  if (S.room.lastManStandingActive && !S.lmsHandled) {
+    S.lmsHandled = true;
+    if (S.joined && S.inGame) {
+      playLmsAlertTone();
+      showLmsBanner(S.room.soleSurvivorName);
+    }
+  } else if (!S.room.lastManStandingActive) {
+    S.lmsHandled = false;
+    hideLmsBanner();
   }
 
   const count = Object.keys(S.players).length;
@@ -656,6 +810,7 @@ function onRoomSnapshot(snap) {
       persistRole();
       syncPingStore();
       maybeShowReveal();
+      renderSupplyDrop();
       refreshGame();
     }
   }
@@ -732,7 +887,7 @@ function maybeClaimHost() {
     return; // abort — someone else is host
   }).then(async ({ committed, snapshot }) => {
     if (committed && snapshot.val() === PLAYER_ID) {
-      await stateRef.child('hostId').onDisconnect().remove();
+      try { await stateRef.child('hostId').onDisconnect().cancel(); } catch (e) {}
       toast('👑 You are now the host');
     }
   }).catch(console.error).finally(() => { S.hostClaimPending = false; });
@@ -742,14 +897,48 @@ function maybeClaimHost() {
    10. HOST SETTINGS — sliders + live zone preview
    --------------------------------------------------------- */
 function readSettings() {
+  const shrinkPace = el.shrinkPaceSelect ? Number(el.shrinkPaceSelect.value) : Number(el.shrinkSlider.value);
   return {
     durationMin: Number(el.durationSlider.value) || 15,
     graceSec: Number(el.graceSlider.value),
     startRadiusFt: Number(el.radiusSlider.value),
     minRadiusFt: Number(el.minRadiusSlider.value),
-    shrinkFtPerMin: Number(el.shrinkSlider.value),
+    shrinkFtPerMin: isNaN(shrinkPace) ? Number(el.shrinkSlider.value) : shrinkPace,
     shrinkEnabled: el.shrinkToggle ? el.shrinkToggle.checked : true,
+    supplyDropEnabled: el.supplyDropToggle ? el.supplyDropToggle.checked : true,
+    lmsEnabled: el.lmsToggle ? el.lmsToggle.checked : true,
+    oobPenalty: el.oobPenaltySelect ? el.oobPenaltySelect.value : 'reveal',
   };
+}
+
+/** Applies quick host configuration presets */
+function applyPreset(type) {
+  if (type === 'blitz') {
+    // "Quick Blitz": 10m match, 45s grace, 150 ft/min, Infection ON, LMS ON, Drops OFF.
+    el.durationSlider.value = 10;
+    el.graceSlider.value = 45;
+    if (el.shrinkPaceSelect) el.shrinkPaceSelect.value = '150';
+    el.shrinkSlider.value = 150;
+    if (el.infectionToggle) el.infectionToggle.checked = true;
+    if (el.lmsToggle) el.lmsToggle.checked = true;
+    if (el.supplyDropToggle) el.supplyDropToggle.checked = false;
+    if (el.shrinkToggle) el.shrinkToggle.checked = true;
+    toast('⚡ Quick Blitz preset applied');
+  } else if (type === 'tactical') {
+    // "Big Park Tactical": 20m match, 90s grace, 100 ft/min, Infection ON, LMS ON, Drops ON.
+    el.durationSlider.value = 20;
+    el.graceSlider.value = 90;
+    if (el.shrinkPaceSelect) el.shrinkPaceSelect.value = '100';
+    el.shrinkSlider.value = 100;
+    if (el.infectionToggle) el.infectionToggle.checked = true;
+    if (el.lmsToggle) el.lmsToggle.checked = true;
+    if (el.supplyDropToggle) el.supplyDropToggle.checked = true;
+    if (el.shrinkToggle) el.shrinkToggle.checked = true;
+    toast('🌲 Big Park Tactical preset applied');
+  }
+  vibrate(20);
+  renderSettings();
+  updatePreview(false);
 }
 
 /** Paints the filled part of a range track via a CSS variable. */
@@ -768,9 +957,14 @@ function renderSettings() {
   el.graceValue.textContent = `Grace Period: ${formatMSS(s.graceSec)}`;
   el.radiusValue.textContent = `Starting Radius: ${fmtFt(s.startRadiusFt)} ft`;
 
+  if (el.shrinkPaceSelect && String(s.shrinkFtPerMin) !== el.shrinkPaceSelect.value) {
+    el.shrinkPaceSelect.value = String(s.shrinkFtPerMin);
+  }
+
   if (!s.shrinkEnabled) {
     el.minRadiusSlider.disabled = true;
     el.shrinkSlider.disabled = true;
+    if (el.shrinkPaceSelect) el.shrinkPaceSelect.disabled = true;
     el.minRadiusGroup.classList.add('disabled');
     el.shrinkSpeedGroup.classList.add('disabled');
     el.minRadiusValue.textContent = 'Min Radius: Disabled (No Shrink)';
@@ -780,6 +974,7 @@ function renderSettings() {
   } else {
     el.minRadiusSlider.disabled = false;
     el.shrinkSlider.disabled = false;
+    if (el.shrinkPaceSelect) el.shrinkPaceSelect.disabled = false;
     el.minRadiusGroup.classList.remove('disabled');
     el.shrinkSpeedGroup.classList.remove('disabled');
     el.minRadiusValue.textContent = `Min Radius: ${fmtFt(minR)} ft`;
@@ -801,9 +996,21 @@ function restoreSettings() {
       if (s.graceSec) el.graceSlider.value = s.graceSec;
       if (s.startRadiusFt) el.radiusSlider.value = s.startRadiusFt;
       if (s.minRadiusFt) el.minRadiusSlider.value = s.minRadiusFt;
-      if (s.shrinkFtPerMin) el.shrinkSlider.value = s.shrinkFtPerMin;
+      if (s.shrinkFtPerMin) {
+        el.shrinkSlider.value = s.shrinkFtPerMin;
+        if (el.shrinkPaceSelect) el.shrinkPaceSelect.value = String(s.shrinkFtPerMin);
+      }
       if (typeof s.shrinkEnabled === 'boolean' && el.shrinkToggle) {
         el.shrinkToggle.checked = s.shrinkEnabled;
+      }
+      if (typeof s.supplyDropEnabled === 'boolean' && el.supplyDropToggle) {
+        el.supplyDropToggle.checked = s.supplyDropEnabled;
+      }
+      if (typeof s.lmsEnabled === 'boolean' && el.lmsToggle) {
+        el.lmsToggle.checked = s.lmsEnabled;
+      }
+      if (s.oobPenalty && el.oobPenaltySelect) {
+        el.oobPenaltySelect.value = s.oobPenalty;
       }
     }
   } catch { /* ignore */ }
@@ -1023,6 +1230,13 @@ async function startGame() {
   updates['state/matchEndsAt'] = null;
   updates['state/zonePaused'] = false;
   updates['state/winner'] = null;
+  updates['state/supplyDropEnabled'] = cfg.supplyDropEnabled !== false;
+  updates['state/supplyDrop'] = null;
+  updates['state/radarJammedUntil'] = null;
+  updates['state/lastPingAt'] = null;
+  updates['state/lmsEnabled'] = cfg.lmsEnabled !== false;
+  updates['state/lastManStandingActive'] = false;
+  updates['state/soleSurvivorName'] = null;
   updates['state/zone'] = {
     centerLat: center.lat,
     centerLng: center.lng,
@@ -1063,6 +1277,12 @@ async function returnToLobby() {
     'state/totalPings': null,
     'state/winner': null,
     'state/zone': null,
+    'state/supplyDrop': null,
+    'state/radarJammedUntil': null,
+    'state/lastPingAt': null,
+    'state/lastManStandingActive': null,
+    'state/soleSurvivorName': null,
+    'state/lmsEnabled': null,
   };
   Object.keys(S.players).forEach((id) => {
     updates[`players/${id}/role`] = null;
@@ -1108,7 +1328,6 @@ function enterGame() {
   }, 350);
 
   el.statusPill.classList.remove('hidden');
-  el.rosterPill.classList.remove('hidden');
   el.gameControls.classList.remove('hidden');
   el.recenterBtn.classList.remove('hidden');
   setFollow(true);
@@ -1136,11 +1355,22 @@ function exitGame() {
 
   S.exposed = false;
   S.pingRevealUntil = 0;
+  S.hunterReconUntil = 0;
   S.dismissedCaught = false;
+  S.lmsHandled = false;
+  S.lmsTriggerPending = false;
+  clearTimeout(S.lmsBannerTimer);
+  hideLmsBanner();
+  if (el.matchTimer) el.matchTimer.classList.remove('sudden-death');
+  if (el.topHudBar) el.topHudBar.classList.remove('lms-active');
   document.body.classList.remove('out-of-zone');
 
+  if (S.supplyDropMarker) {
+    map.removeLayer(S.supplyDropMarker);
+    S.supplyDropMarker = null;
+  }
+
   el.statusPill.classList.add('hidden');
-  el.rosterPill.classList.add('hidden');
   setRosterOpen(false);
   S.infectPending = false;
   el.infectedOverlay.classList.add('hidden');
@@ -1152,12 +1382,10 @@ function exitGame() {
   el.hunterLock.classList.add('hidden');
   el.radarSweep.classList.add('hidden');
   el.pingBtn.classList.add('hidden');
-  el.distanceHud.classList.add('hidden');
   el.runnerTagPill.classList.add('hidden');
   el.hunterTagBar.classList.add('hidden');
   el.selfTagBtn.classList.add('hidden');
   el.selfTagConfirm.classList.add('hidden');
-  el.distBadge.classList.add('hidden');
   el.adminPanel.classList.add('hidden');
   S.omniUntil = 0;
   el.caughtOverlay.classList.add('hidden');
@@ -1170,6 +1398,24 @@ function exitGame() {
     renderLobby();
     toast('Game over — back to the lobby');
   }
+}
+
+function showLmsBanner(survivorName) {
+  if (!el.lmsBanner) return;
+  const name = survivorName || 'Runner';
+  if (el.lmsBannerText) {
+    el.lmsBannerText.textContent = `LAST MAN STANDING: ${name} is the sole survivor! 5:00 on clock. Radar disabled. Zone closing at 200 ft/min.`;
+  }
+  el.lmsBanner.classList.remove('hidden');
+
+  clearTimeout(S.lmsBannerTimer);
+  S.lmsBannerTimer = setTimeout(() => {
+    hideLmsBanner();
+  }, 5000);
+}
+
+function hideLmsBanner() {
+  if (el.lmsBanner) el.lmsBanner.classList.add('hidden');
 }
 
 /** Full in-game re-render (room snapshot / phase change). */
@@ -1195,14 +1441,18 @@ function gameTick() {
   renderGrace();
   maybeEndGrace();
   checkWinConditions();
+  checkSupplyDropSpawn();
+  checkSupplyDropCollection();
+  checkProximity();
 
-  // Radar reveal just expired → hide runners again.
-  const active = pingActive() || omniActive();
+  // Radar reveal or hunter recon just expired → re-render markers.
+  const active = pingActive() || omniActive() || (Date.now() < S.hunterReconUntil);
   if (active !== S.pingWasActive) {
     S.pingWasActive = active;
     renderMarkers();
   }
   renderPingButton();
+  renderSupplyDrop();
 }
 
 /** Detects phase transitions (grace → playing) and fires one-time effects. */
@@ -1222,6 +1472,7 @@ function syncPhase() {
   renderMarkers();
   renderGrace();
   renderPingButton();
+  renderSupplyDrop();
   syncHostLoops();
 }
 
@@ -1240,12 +1491,50 @@ function checkWinConditions() {
     return;
   }
 
+  // Last Man Standing Detection:
+  // When the count of active surviving runners drops to exactly 1:
+  const lmsEnabled = S.room.lmsEnabled !== false;
+  if (lmsEnabled && aliveRunners.length === 1 && !S.room.lastManStandingActive && !S.lmsTriggerPending) {
+    const anyInfectedOrEliminated = Object.values(S.players).some((p) => p.eliminated || p.infectedAt);
+    if (runners.length > 1 || anyInfectedOrEliminated) {
+      triggerLastManStanding(aliveRunners[0]);
+    }
+  }
+
   if (S.room.matchEndsAt && serverNow() >= S.room.matchEndsAt) {
     if (aliveRunners.length > 0) {
       endMatch('runners');
     } else {
       endMatch('hunters');
     }
+  }
+}
+
+async function triggerLastManStanding(soleSurvivor) {
+  if (!isHost() || S.lmsTriggerPending) return;
+  S.lmsTriggerPending = true;
+  try {
+    const survivorName = soleSurvivor.name || 'Runner';
+    const fiveMinEndsAt = serverNow() + (5 * 60 * 1000);
+    const feedKey = `lms-${Date.now()}`;
+
+    const updates = {
+      'state/lastManStandingActive': true,
+      'state/soleSurvivorName': survivorName,
+      'state/matchEndsAt': fiveMinEndsAt,
+      'state/zone/shrinkRatePerMinFeet': 200,
+      'state/zone/shrinkEnabled': true,
+      [`activity/${feedKey}`]: {
+        text: `⚡ LAST MAN STANDING: ${survivorName} is the sole survivor! 5:00 on clock. Radar offline. Zone closing at 200 ft/min!`,
+        ts: firebase.database.ServerValue.TIMESTAMP,
+      },
+    };
+
+    await roomRef.update(updates);
+  } catch (err) {
+    console.error('Failed to trigger Last Man Standing:', err);
+  } finally {
+    S.lmsTriggerPending = false;
   }
 }
 
@@ -1264,20 +1553,16 @@ async function endMatch(winner) {
 
 function renderHUD() {
   const role = myRole();
-  el.roleChip.className = `role-chip ${role || ''}`;
-  el.roleChip.textContent = role ? role.toUpperCase() : '…';
-  el.playerCount.textContent = Object.keys(S.players).length;
+  el.roleChip.className = `role-chip role-${role || 'none'}`;
+  const roleText = $('role-text');
+  if (roleText) roleText.textContent = role ? role.toUpperCase() : '…';
   el.endGameBtn.classList.toggle('hidden', !isHost());
 
-  // Runner score ticker
+  // Alive count in top hud bar
   const runners = Object.values(S.players).filter((p) => p.role === 'runner');
-  if (isActive() && runners.length > 0) {
-    el.runnerScoreGroup.classList.remove('hidden');
-    const alive = runners.filter((p) => !p.eliminated).length;
-    el.runnersAliveCount.textContent = alive;
-    el.runnersTotalCount.textContent = runners.length;
-  } else {
-    el.runnerScoreGroup.classList.add('hidden');
+  const aliveRunners = runners.filter((p) => !p.eliminated).length;
+  if (el.aliveCount) {
+    el.aliveCount.textContent = isActive() ? `${aliveRunners} Alive` : `${Object.keys(S.players).length} Players`;
   }
 
   // Runner secret tag code display
@@ -1362,9 +1647,16 @@ function renderGameOver() {
 
 function renderTimer() {
   const ph = phase();
+  const isLms = !!S.room.lastManStandingActive && ph === STATUS.PLAYING;
+
+  // Toggle Sudden Death visual classes on HUD
+  if (el.matchTimer) el.matchTimer.classList.toggle('sudden-death', isLms);
+  if (el.topHudBar) el.topHudBar.classList.toggle('lms-active', isLms);
+
   if (ph === STATUS.PLAYING && S.room.matchEndsAt) {
     const leftMs = Math.max(0, S.room.matchEndsAt - serverNow());
-    el.gameTimer.textContent = formatCountdown(leftMs);
+    const countdown = formatCountdown(leftMs);
+    el.gameTimer.textContent = isLms ? `SUDDEN DEATH: ${countdown}` : countdown;
   } else if (ph === STATUS.GRACE && S.room.matchDurationMin) {
     el.gameTimer.textContent = formatMSS(S.room.matchDurationMin * 60);
   } else if (S.room.startedAt) {
@@ -1474,153 +1766,189 @@ function checkZone() {
   }
   document.body.classList.toggle('out-of-zone', revealed);
 
+  // Out-of-Bounds Siren: descending dual-tone sweep (800Hz to 400Hz) paired with navigator.vibrate([300, 100, 300, 100, 300])
+  if (outside) {
+    const now = Date.now();
+    if (now - S.lastSirenAt >= 3500) {
+      S.lastSirenAt = now;
+      playSiren();
+    }
+  }
+
   if (revealed !== S.exposed) {
     S.exposed = revealed;
-    if (revealed) vibrate([300, 100, 300]);
+    if (revealed) vibrate([300, 100, 300, 100, 300]);
     else if (S.inGame) toast('✅ Back inside the safe zone — hidden again');
     if (meRef && S.joined) meRef.update({ exposed: revealed }).catch((err) => console.warn('Exposure write failed', err));
   }
-
-  // Update right-side tactical distance visual
-  renderDistanceHUD();
 }
 
-/* ---------- Tactical Right-Side Distance Visual HUD ---------- */
-function renderDistBadge(z) {
-  const show = S.inGame && !!z;
-  el.distBadge.classList.toggle('hidden', !show);
-  if (!show) return;
-  el.distBadgeRadius.textContent = `${fmtFt(z.currentRadiusFeet)} ft`;
-  if (S.distFeet === null) {
-    el.distBadgeVal.textContent = '--- ft';
-    el.distBadgeCenter.textContent = '-- ft';
-    el.distBadgeStatus.textContent = 'LOCATING GPS…';
-    el.distBadge.classList.remove('out');
-    return;
-  }
-  const edge = z.currentRadiusFeet - S.distFeet;
-  const out = edge < 0;
-  el.distBadgeVal.textContent = out ? `${fmtFt(-edge)} ft OUT` : `${fmtFt(edge)} ft`;
-  el.distBadgeCenter.textContent = `${fmtFt(S.distFeet)} ft`;
-  el.distBadgeStatus.textContent = out ? 'OUTSIDE' : 'INSIDE';
-  el.distBadge.classList.toggle('out', out && phase() === STATUS.PLAYING); // flashes even when collapsed
-}
+/* ---------- Proximity Heartbeat Check ---------- */
+function checkProximity() {
+  if (!S.inGame || phase() !== STATUS.PLAYING || !S.myPos) return;
+  const myRoleVal = myRole();
+  if (!myRoleVal) return;
 
-function renderDistanceHUD() {
-  const z = zone();
-  renderDistBadge(z);
-  const show = S.inGame && !!z;
-  el.distanceHud.classList.toggle('hidden', !show);
-  if (!show) return;
+  const now = Date.now();
+  if (now - S.lastHeartbeatAt < 3000) return;
 
-  const ph = phase();
-  const role = myRole();
+  const myLat = S.myPos.lat;
+  const myLng = S.myPos.lng;
+  const maxMeters = 60 * FT_TO_M; // 60 feet (18.288 meters)
 
-  if (S.distFeet !== null) {
-    const edgeDelta = z.currentRadiusFeet - S.distFeet;
-    const isOut = edgeDelta < 0;
-    const isClose = !isOut && edgeDelta < (z.currentRadiusFeet * 0.18);
-
-    if (isOut) {
-      el.distEdgeNum.textContent = `+${fmtFt(-edgeDelta)}`;
-      el.distEdgeNum.className = 'dist-number danger mono';
-      el.distEdgeLabel.textContent = ph === STATUS.PLAYING ? 'EXPOSED OUTSIDE!' : 'OUTSIDE ZONE!';
-      el.distStatusBadge.textContent = ph === STATUS.PLAYING ? 'EXPOSED ⚠️' : 'OUTSIDE';
-      el.distStatusBadge.className = 'dist-status-badge out-zone';
-      el.distIndicatorDot.className = 'dist-indicator-dot danger';
-      el.distPlayerPin.classList.add('danger');
-    } else {
-      el.distEdgeNum.textContent = fmtFt(edgeDelta);
-      el.distEdgeNum.className = isClose ? 'dist-number warn mono' : 'dist-number safe mono';
-      el.distEdgeLabel.textContent = 'TO SAFE BORDER';
-      el.distStatusBadge.textContent = isClose ? 'NEAR BORDER' : 'SAFE IN ZONE';
-      el.distStatusBadge.className = isClose ? 'dist-status-badge out-zone' : 'dist-status-badge in-zone';
-      el.distIndicatorDot.className = 'dist-indicator-dot';
-      el.distPlayerPin.classList.remove('danger');
-    }
-
-    // Ruler track calculation:
-    // Bottom (0%) is zone center (0 ft).
-    // Perimeter line is at 80% mark.
-    // > 80% represents danger / outside territory (up to 96%).
-    let bottomPct = 0;
-    if (S.distFeet <= z.currentRadiusFeet) {
-      bottomPct = (S.distFeet / Math.max(1, z.currentRadiusFeet)) * 80;
-    } else {
-      const extra = S.distFeet - z.currentRadiusFeet;
-      const extraRatio = Math.min(1, extra / Math.max(50, z.currentRadiusFeet * 0.35));
-      bottomPct = 80 + (extraRatio * 16);
-    }
-    el.distPlayerPin.style.bottom = `${Math.max(2, Math.min(96, bottomPct))}%`;
-    el.distPlayerPin.classList.toggle('hunter', role === 'hunter');
-    el.distFromCenter.textContent = `${fmtFt(S.distFeet)} ft`;
-  } else {
-    el.distEdgeNum.textContent = '---';
-    el.distEdgeNum.className = 'dist-number mono';
-    el.distEdgeLabel.textContent = 'LOCATING GPS…';
-    el.distFromCenter.textContent = '-- ft';
-    el.distPlayerPin.style.bottom = '50%';
-  }
-
-  el.distZoneRadius.textContent = `${fmtFt(z.currentRadiusFeet)} ft`;
-
-  // Dynamic Min Radius marker line position on gauge
-  if (z.minRadiusFeet && z.currentRadiusFeet > 0) {
-    const minPct = (z.minRadiusFeet / z.currentRadiusFeet) * 80;
-    el.distMinLine.style.bottom = `${Math.max(4, Math.min(75, minPct))}%`;
-    el.distMinLine.classList.remove('hidden');
-  } else {
-    el.distMinLine.classList.add('hidden');
-  }
-
-  // Hunter Radar & Targets on Ruler
-  renderDistanceTargets(z);
-}
-
-function renderDistanceTargets(z) {
-  const role = myRole();
-  el.distTargetsContainer.replaceChildren();
-
-  if (role !== 'hunter' || !S.myPos || !z) {
-    el.distTargetRow.classList.add('hidden');
-    return;
-  }
-
-  let closestDist = Infinity;
-  let targetCount = 0;
-
+  let inProximity = false;
   for (const [id, p] of Object.entries(S.players)) {
-    if (id === PLAYER_ID || p.role !== 'runner') continue;
-    if (!isVisibleToMe(id, p)) continue;
+    if (id === PLAYER_ID || p.eliminated) continue;
     if (typeof p.lat !== 'number' || typeof p.lng !== 'number') continue;
 
-    const runnerDist = map.distance([S.myPos.lat, S.myPos.lng], [p.lat, p.lng]) / FT_TO_M;
-    if (runnerDist < closestDist) closestDist = runnerDist;
+    const isOpponent = (myRoleVal === 'runner' && p.role === 'hunter') ||
+                       (myRoleVal === 'hunter' && p.role === 'runner');
+    if (!isOpponent) continue;
 
-    // Runner's distance from zone center for the vertical rail
-    const runnerFromCenter = map.distance([p.lat, p.lng], [z.centerLat, z.centerLng]) / FT_TO_M;
-    let rPct = 0;
-    if (runnerFromCenter <= z.currentRadiusFeet) {
-      rPct = (runnerFromCenter / Math.max(1, z.currentRadiusFeet)) * 80;
-    } else {
-      const extra = runnerFromCenter - z.currentRadiusFeet;
-      rPct = 80 + (Math.min(1, extra / Math.max(50, z.currentRadiusFeet * 0.35)) * 16);
+    const d = map.distance([myLat, myLng], [p.lat, p.lng]);
+    if (d <= maxMeters) {
+      inProximity = true;
+      break;
     }
-
-    const dot = document.createElement('div');
-    dot.className = 'dist-target-pin';
-    dot.style.bottom = `${Math.max(2, Math.min(96, rPct))}%`;
-    dot.title = `${escapeHtml(p.name)} (${Math.round(runnerDist)} ft away)`;
-    el.distTargetsContainer.appendChild(dot);
-    targetCount++;
   }
 
-  if (closestDist < Infinity && targetCount > 0) {
-    el.distTargetRow.classList.remove('hidden');
-    el.distTargetLabel.textContent = 'Nearest';
-    el.distTargetVal.textContent = `${fmtFt(closestDist)} ft`;
+  if (inProximity) {
+    S.lastHeartbeatAt = now;
+    playHeartbeatPulse();
+  }
+}
+
+/* ---------- Host-Configurable Mid-Game Supply Drops ---------- */
+function checkSupplyDropSpawn() {
+  if (!isHost() || phase() !== STATUS.PLAYING) return;
+  if (!S.room.supplyDropEnabled || S.room.supplyDrop) return;
+  const matchEndsAt = S.room.matchEndsAt;
+  const durationMin = S.room.matchDurationMin || 15;
+  if (!matchEndsAt) return;
+
+  // Spawn point calculated at match midpoint: matchEndsAt - (matchDurationMin * 30000)
+  const midPoint = matchEndsAt - (durationMin * 30000);
+  if (serverNow() >= midPoint) {
+    const z = zone();
+    if (!z) return;
+
+    // Random location within active safe zone
+    const rFeet = Math.sqrt(Math.random()) * (z.currentRadiusFeet * 0.85);
+    const rMeters = ftToM(rFeet);
+    const angle = Math.random() * 2 * Math.PI;
+    const dLat = (rMeters * Math.cos(angle)) / 111320;
+    const dLng = (rMeters * Math.sin(angle)) / (111320 * Math.cos((z.centerLat * Math.PI) / 180));
+    const dropLat = z.centerLat + dLat;
+    const dropLng = z.centerLng + dLng;
+
+    const dropData = {
+      active: true,
+      lat: dropLat,
+      lng: dropLng,
+      spawnedAt: firebase.database.ServerValue.TIMESTAMP,
+    };
+
+    stateRef.child('supplyDrop').set(dropData).catch(console.error);
+
+    const feedKey = `drop-spawn-${Date.now()}`;
+    roomRef.child(`activity/${feedKey}`).set({
+      text: '📦 Supply drop has landed in the safe zone!',
+      ts: firebase.database.ServerValue.TIMESTAMP,
+    }).catch(console.error);
+  }
+}
+
+function renderSupplyDrop() {
+  const drop = S.room.supplyDrop;
+  if (!S.inGame || !drop || !drop.active || typeof drop.lat !== 'number' || typeof drop.lng !== 'number') {
+    if (S.supplyDropMarker) {
+      map.removeLayer(S.supplyDropMarker);
+      S.supplyDropMarker = null;
+    }
+    return;
+  }
+
+  if (!S.supplyDropMarker) {
+    const icon = L.divIcon({
+      className: 'supply-drop-icon',
+      html: '<div class="supply-drop-ring"></div><div class="supply-drop-crate">📦</div>',
+      iconSize: [44, 44],
+      iconAnchor: [22, 22],
+    });
+    S.supplyDropMarker = L.marker([drop.lat, drop.lng], { icon, interactive: false }).addTo(map);
+    S.supplyDropMarker.bindTooltip('<span class="tip supply-drop-tip">📦 Supply Drop Active!</span>', {
+      permanent: true,
+      direction: 'top',
+      offset: [0, -20],
+      className: 'supply-drop-tooltip',
+    });
   } else {
-    el.distTargetRow.classList.add('hidden');
+    S.supplyDropMarker.setLatLng([drop.lat, drop.lng]);
+  }
+}
+
+function checkSupplyDropCollection() {
+  const drop = S.room.supplyDrop;
+  if (!S.inGame || !drop || !drop.active || !S.myPos || S.collectingDrop) return;
+  const dist = map.distance([S.myPos.lat, S.myPos.lng], [drop.lat, drop.lng]);
+  if (dist <= 7.62) { // 25 feet (7.62m)
+    collectSupplyDrop();
+  }
+}
+
+async function collectSupplyDrop() {
+  if (S.collectingDrop) return;
+  S.collectingDrop = true;
+  try {
+    const res = await stateRef.child('supplyDrop').transaction((curr) => {
+      if (!curr || !curr.active) return; // already collected
+      return { ...curr, active: false, collectedBy: PLAYER_ID, collectedAt: Date.now() };
+    });
+
+    if (res.committed && res.snapshot.val()) {
+      const myName = S.name || 'A player';
+      const role = myRole();
+
+      if (role === 'runner') {
+        // Reward A: Radar Jammer for 45s
+        const jammedUntil = Date.now() + 45000;
+        await stateRef.child('radarJammedUntil').set(jammedUntil);
+
+        // Reward B: Hunter Recon on Runner's map for 20s
+        S.hunterReconUntil = Date.now() + 20000;
+
+        // Post ticker
+        const feedKey = `drop-collect-${Date.now()}`;
+        await roomRef.child(`activity/${feedKey}`).set({
+          text: `📦 ${myName} secured the supply drop! Hunters jammed (45s) & exposed (20s)!`,
+          ts: firebase.database.ServerValue.TIMESTAMP,
+        });
+        toast('📦 Supply Drop Secured! Hunters jammed (45s) & exposed (20s)!', 'warn', 5000);
+      } else if (role === 'hunter') {
+        // Reward: Grants +1 instant radar ping charge
+        if (me()?.infectedAt) {
+          const cur = Number(me()?.pingsRemaining) || 0;
+          await meRef.update({ pingsRemaining: cur + 1 });
+        } else {
+          S.pingsUsed = Math.max(0, S.pingsUsed - 1);
+          savePings();
+        }
+        renderPingButton();
+
+        // Post ticker
+        const feedKey = `drop-collect-${Date.now()}`;
+        await roomRef.child(`activity/${feedKey}`).set({
+          text: `📦 Hunter ${myName} secured the supply drop (+1 radar ping)!`,
+          ts: firebase.database.ServerValue.TIMESTAMP,
+        });
+        toast('📦 Supply Drop Secured! (+1 radar ping)', 'warn', 4000);
+      }
+      renderMarkers();
+    }
+  } catch (err) {
+    console.error('Error collecting supply drop:', err);
+  } finally {
+    setTimeout(() => { S.collectingDrop = false; }, 2000);
   }
 }
 
@@ -1664,8 +1992,19 @@ function savePings() {
 
 function firePing() {
   if (myRole() !== 'hunter' || phase() !== STATUS.PLAYING) return;
+  if (S.room.lastManStandingActive) {
+    toast('⚠️ Radar is offline during Last Man Standing!', 'warn');
+    return;
+  }
   const now = Date.now();
   if (pingsLeft() <= 0 || now < S.pingCooldownUntil) return;
+
+  const jammedUntil = S.room.radarJammedUntil || 0;
+  if (jammedUntil > serverNow()) {
+    const remSec = Math.max(1, Math.ceil((jammedUntil - serverNow()) / 1000));
+    toast(`⚠️ Radar is jammed by runners! (${remSec}s remaining)`, 'warn');
+    return;
+  }
 
   if (me()?.infectedAt) {
     meRef.update({ pingsRemaining: pingsLeft() - 1 }).catch(console.error);
@@ -1674,6 +2013,9 @@ function firePing() {
   }
   S.pingCooldownUntil = now + PING_COOLDOWN_MS;
   savePings();
+
+  // Broadcast radar ping to RTDB so all runner devices sound sonar chime
+  stateRef.child('lastPingAt').set(firebase.database.ServerValue.TIMESTAMP).catch(console.error);
 
   // Restart the sweep animation.
   el.radarSweep.classList.add('hidden');
@@ -1744,9 +2086,19 @@ function renderPingButton() {
 
   const now = Date.now();
   const left = pingsLeft();
+  const jammedUntil = S.room.radarJammedUntil || 0;
+  const isJammed = jammedUntil > serverNow();
+
   let text, mode, progress = 0;
 
-  if (phase() !== STATUS.PLAYING) {
+  if (S.room.lastManStandingActive && phase() === STATUS.PLAYING) {
+    text = 'Radar Offline - Last Man Standing';
+    mode = 'lms';
+  } else if (isJammed) {
+    const secs = Math.max(1, Math.ceil((jammedUntil - serverNow()) / 1000));
+    text = `⚠️ Radar Jammed (${secs}s)`;
+    mode = 'jammed';
+  } else if (phase() !== STATUS.PLAYING) {
     text = '🔒 Radar Locked'; mode = 'locked';
   } else if (now < S.pingCooldownUntil) {
     const secs = Math.ceil((S.pingCooldownUntil - now) / 1000);
@@ -1998,19 +2350,31 @@ function renderAdmin() {
 function setRosterOpen(open) {
   el.rosterDrawer.classList.toggle('open', open);
   el.rosterDrawer.setAttribute('aria-hidden', String(!open));
-  el.rosterPill.setAttribute('aria-expanded', String(open));
+  if (el.rosterToggleBtn) el.rosterToggleBtn.setAttribute('aria-expanded', String(open));
   el.rosterBackdrop.classList.toggle('hidden', !open);
 }
 
 function rosterRow(p, kind, extra) {
   const row = document.createElement('div');
-  row.className = `roster-row${kind === 'out' ? ' out' : ''}`;
+  const now = serverNow();
+  const lastActive = p.lastSeen || p.updatedAt || 0;
+  const isSignalLow = !p.eliminated && lastActive > 0 && (now - lastActive > 60000);
+
+  row.className = `roster-row${kind === 'out' ? ' out' : ''}${isSignalLow ? ' signal-low' : ''}`;
   const dot = document.createElement('span');
   dot.className = `roster-dot ${kind}`;
   const name = document.createElement('span');
   name.className = 'roster-name';
   name.textContent = p.name;
   row.append(dot, name);
+
+  if (isSignalLow) {
+    const lowTag = document.createElement('span');
+    lowTag.className = 'roster-tag signal-low';
+    lowTag.textContent = 'Signal Low';
+    row.appendChild(lowTag);
+  }
+
   if (extra) {
     const t = document.createElement('span');
     t.className = 'roster-tag';
@@ -2026,9 +2390,8 @@ function renderRoster() {
   const out = all.filter((p) => p.eliminated);
   const hunters = all.filter((p) => p.role === 'hunter' && !p.eliminated);
   const runners = all.filter((p) => p.role === 'runner' && !p.eliminated);
-  const alive = hunters.length + runners.length;
 
-  el.rosterPillText.textContent = `👥 Players (${alive} Alive)`;
+  if (el.aliveCount) el.aliveCount.textContent = `${runners.length} Alive`;
   el.rosterSummary.textContent = `Hunters (${hunters.length}) | Runners Left (${runners.length})`;
 
   const frag = document.createDocumentFragment();
@@ -2144,6 +2507,7 @@ function pushPosition() {
     lat: S.myPos.lat,
     lng: S.myPos.lng,
     acc: Math.round(S.myPos.acc),
+    lastSeen: firebase.database.ServerValue.TIMESTAMP,
     updatedAt: firebase.database.ServerValue.TIMESTAMP,
   }).catch((err) => console.warn('Position push failed', err));
 }
@@ -2183,10 +2547,14 @@ async function releaseWakeLock() {
 }
 
 // Wake locks are auto-released when the tab is hidden — re-acquire on return.
+// On visibilitychange to 'visible', resume GPS streaming and sync without reinitializing state.
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && S.inGame) {
-    requestWakeLock();
-    if (S.myPos) pushPosition();
+  if (document.visibilityState === 'visible') {
+    if (S.inGame) requestWakeLock();
+    if (S.joined) {
+      startGPS();
+      if (S.myPos) pushPosition();
+    }
   }
 });
 
@@ -2202,14 +2570,11 @@ el.endGameBtn.addEventListener('click', endGame);
 el.recenterBtn.addEventListener('click', () => setFollow(true));
 el.reveal.addEventListener('click', hideReveal);
 el.pingBtn.addEventListener('click', firePing);
-el.rosterPill.addEventListener('click', () => setRosterOpen(!el.rosterDrawer.classList.contains('open')));
+if (el.rosterToggleBtn) {
+  el.rosterToggleBtn.addEventListener('click', () => setRosterOpen(!el.rosterDrawer.classList.contains('open')));
+}
 el.rosterClose.addEventListener('click', () => setRosterOpen(false));
 el.rosterBackdrop.addEventListener('click', () => setRosterOpen(false));
-el.distBadgeBtn.addEventListener('click', () => {
-  const open = el.distBadgeCard.classList.toggle('hidden') === false;
-  el.distBadgeBtn.setAttribute('aria-expanded', String(open));
-  el.distBadgeChevron.textContent = open ? '▲' : '▼';
-});
 el.selfTagBtn.addEventListener('click', () => el.selfTagConfirm.classList.remove('hidden'));
 el.selfTagCancel.addEventListener('click', () => el.selfTagConfirm.classList.add('hidden'));
 el.selfTagYes.addEventListener('click', confirmSelfTag);
@@ -2220,9 +2585,12 @@ el.adminExpand.addEventListener('click', () => adminAdjustZone(250));
 el.adminShrink.addEventListener('click', () => adminAdjustZone(-250));
 el.adminAddTime.addEventListener('click', adminAddTime);
 el.adminEnd.addEventListener('click', adminEndMatch);
-el.distToggleBtn.addEventListener('click', () => el.distanceHud.classList.toggle('expanded'));
 
-// Host settings sliders & toggle
+// Quick Presets
+if (el.presetBlitz) el.presetBlitz.addEventListener('click', () => applyPreset('blitz'));
+if (el.presetTactical) el.presetTactical.addEventListener('click', () => applyPreset('tactical'));
+
+// Host settings sliders, dropdowns & toggles
 el.durationSlider.addEventListener('input', renderSettings);
 el.radiusSlider.addEventListener('input', onStartRadiusInput);
 el.radiusSlider.addEventListener('change', () => updatePreview(true));
@@ -2231,6 +2599,22 @@ if (el.shrinkToggle) {
     renderSettings();
     updatePreview(false);
   });
+}
+if (el.shrinkPaceSelect) {
+  el.shrinkPaceSelect.addEventListener('change', () => {
+    el.shrinkSlider.value = el.shrinkPaceSelect.value;
+    renderSettings();
+    updatePreview(false);
+  });
+}
+if (el.oobPenaltySelect) {
+  el.oobPenaltySelect.addEventListener('change', renderSettings);
+}
+if (el.supplyDropToggle) {
+  el.supplyDropToggle.addEventListener('change', renderSettings);
+}
+if (el.lmsToggle) {
+  el.lmsToggle.addEventListener('change', renderSettings);
 }
 el.minRadiusSlider.addEventListener('input', onMinRadiusInput);
 el.minRadiusSlider.addEventListener('change', () => updatePreview(true));
