@@ -110,6 +110,11 @@ const S = {
   pingCooldownUntil: 0,
   pingRevealUntil: 0,
   pingWasActive: false,
+  // Infection mode
+  infectPending: false,   // 3 s takeover overlay still showing → keep runner UI
+  infectedHandled: null,  // infectedAt value we've already reacted to
+  seenActivity: new Set(),
+  activityPrimed: false,
 };
 
 /** Lobby zone-preview map state (host only). */
@@ -222,6 +227,16 @@ const el = {
   distTargetLabel: $('dist-target-label'),
   distTargetVal: $('dist-target-val'),
   distStatusBadge: $('dist-status-badge'),
+  infectionToggle: $('infection-toggle'),
+  infectedOverlay: $('infected-overlay'),
+  statEliminatedLabel: $('stat-eliminated-label'),
+  rosterPill: $('roster-pill'),
+  rosterPillText: $('roster-pill-text'),
+  rosterBackdrop: $('roster-backdrop'),
+  rosterDrawer: $('roster-drawer'),
+  rosterSummary: $('roster-summary'),
+  rosterClose: $('roster-close'),
+  rosterBody: $('roster-body'),
 };
 const SLIDERS = [el.durationSlider, el.radiusSlider, el.minRadiusSlider, el.shrinkSlider, el.graceSlider];
 
@@ -299,7 +314,12 @@ function shuffle(arr) {
 
 const isHost = () => S.room.hostId === PLAYER_ID;
 const me = () => S.players[PLAYER_ID];
-const myRole = () => me()?.role || null;
+const myRole = () => {
+  const r = me()?.role || null;
+  // Hold the runner UI until the infection takeover overlay finishes.
+  return S.infectPending && r === 'hunter' ? 'runner' : r;
+};
+const isInfection = () => S.room.gameMode === 'infection';
 const isActive = () => ACTIVE_STATUSES.has(S.room.state || S.room.status);
 
 /**
@@ -569,6 +589,22 @@ function onRoomSnapshot(snap) {
     Object.entries(v.players || {}).filter(([, p]) => p && typeof p.name === 'string')
   );
   S.loaded = true;
+
+  // Room activity feed (e.g. infection announcements) — toast only new events.
+  const feed = Object.entries(v.activity || {}).sort((a, b) => (a[1].ts || 0) - (b[1].ts || 0));
+  for (const [key, ev] of feed) {
+    if (S.seenActivity.has(key)) continue;
+    S.seenActivity.add(key);
+    if (S.activityPrimed && S.joined && ev && ev.text) toast(ev.text, 'warn', 4500);
+  }
+  S.activityPrimed = true;
+
+  // Did I just get infected?
+  const mine = S.players[PLAYER_ID];
+  if (S.joined && S.inGame && mine?.infectedAt && S.infectedHandled !== mine.infectedAt) {
+    S.infectedHandled = mine.infectedAt;
+    if (Date.now() - mine.infectedAt < 15000) triggerInfection();
+  }
 
   const count = Object.keys(S.players).length;
   if (!S.joined) {
@@ -938,7 +974,12 @@ async function startGame() {
     updates[`players/${id}/eliminated`] = false;
     updates[`players/${id}/eliminatedBy`] = null;
     updates[`players/${id}/exposed`] = false;
+    updates[`players/${id}/infectedAt`] = null;
+    updates[`players/${id}/taggedBy`] = null;
+    updates[`players/${id}/pingsRemaining`] = null;
   });
+  updates['state/gameMode'] = el.infectionToggle && el.infectionToggle.checked ? 'infection' : 'elimination';
+  updates['activity'] = null;
   updates['state/status'] = STATUS.GRACE;
   updates['state/state'] = STATUS.GRACE;
   updates['state/hunterCount'] = hunters;
@@ -996,7 +1037,11 @@ async function returnToLobby() {
     updates[`players/${id}/eliminated`] = null;
     updates[`players/${id}/eliminatedBy`] = null;
     updates[`players/${id}/exposed`] = null;
+    updates[`players/${id}/infectedAt`] = null;
+    updates[`players/${id}/taggedBy`] = null;
+    updates[`players/${id}/pingsRemaining`] = null;
   });
+  updates['activity'] = null;
   try { await roomRef.update(updates); } catch (err) { toast(err.message, 'error'); }
 }
 
@@ -1030,6 +1075,7 @@ function enterGame() {
   }, 350);
 
   el.statusPill.classList.remove('hidden');
+  el.rosterPill.classList.remove('hidden');
   el.gameControls.classList.remove('hidden');
   el.recenterBtn.classList.remove('hidden');
   setFollow(true);
@@ -1061,6 +1107,10 @@ function exitGame() {
   document.body.classList.remove('out-of-zone');
 
   el.statusPill.classList.add('hidden');
+  el.rosterPill.classList.add('hidden');
+  setRosterOpen(false);
+  S.infectPending = false;
+  el.infectedOverlay.classList.add('hidden');
   el.gameControls.classList.add('hidden');
   el.recenterBtn.classList.add('hidden');
   el.gpsBanner.classList.add('hidden');
@@ -1095,6 +1145,7 @@ function refreshGame() {
   renderMarkers();
   renderGrace();
   renderPingButton();
+  renderRoster();
   syncHostLoops();
 }
 
@@ -1139,7 +1190,11 @@ function syncPhase() {
 function checkWinConditions() {
   if (!isHost() || phase() !== STATUS.PLAYING) return;
   const runners = Object.values(S.players).filter((p) => p.role === 'runner');
-  if (runners.length === 0) return;
+  if (runners.length === 0) {
+    // Infection: every runner has been converted to a hunter.
+    if (isInfection() && Object.values(S.players).some((p) => p.role === 'hunter')) endMatch('hunters');
+    return;
+  }
 
   const aliveRunners = runners.filter((p) => !p.eliminated);
   if (aliveRunners.length === 0) {
@@ -1231,11 +1286,17 @@ function renderGameOver() {
   const runners = Object.values(S.players).filter((p) => p.role === 'runner');
   const alive = runners.filter((p) => !p.eliminated).length;
   const eliminated = runners.length - alive;
+  const infected = Object.values(S.players).filter((p) => p.infectedAt).length;
 
   el.statSurvivors.textContent = alive;
-  el.statEliminated.textContent = eliminated;
+  el.statEliminated.textContent = isInfection() ? infected : eliminated;
+  el.statEliminatedLabel.textContent = isInfection() ? 'Infected' : 'Eliminated';
 
-  if (winner === 'hunters') {
+  if (winner === 'hunters' && isInfection()) {
+    el.winnerTrophy.textContent = '🏆';
+    el.winnerTitle.textContent = '🏆 THE HORDE WINS - ALL RUNNERS INFECTED!';
+    el.winnerSub.textContent = 'Every runner has joined the hunt.';
+  } else if (winner === 'hunters') {
     el.winnerTrophy.textContent = '🏆';
     el.winnerTitle.textContent = 'HUNTERS WIN!';
     el.winnerSub.textContent = 'All runners were successfully tracked and tagged!';
@@ -1495,6 +1556,13 @@ function getMaxPings() {
   return S.room.totalPings || maxPingsForDuration(S.room.matchDurationMin || 15);
 }
 
+/** Pings left: infected players use their personal Firebase charge; original hunters use the match quota. */
+function pingsLeft() {
+  const mp = me();
+  if (mp?.infectedAt) return Math.max(0, Number(mp.pingsRemaining) || 0);
+  return Math.max(0, getMaxPings() - S.pingsUsed);
+}
+
 /** Ping usage is stored per match so a reload can't refill your scans. */
 function syncPingStore() {
   const key = S.room.startedAt ? LS.pings(ROOM_ID, S.room.startedAt) : null;
@@ -1524,10 +1592,13 @@ function savePings() {
 function firePing() {
   if (myRole() !== 'hunter' || phase() !== STATUS.PLAYING) return;
   const now = Date.now();
-  const maxP = getMaxPings();
-  if (S.pingsUsed >= maxP || now < S.pingCooldownUntil) return;
+  if (pingsLeft() <= 0 || now < S.pingCooldownUntil) return;
 
-  S.pingsUsed += 1;
+  if (me()?.infectedAt) {
+    meRef.update({ pingsRemaining: pingsLeft() - 1 }).catch(console.error);
+  } else {
+    S.pingsUsed += 1;
+  }
   S.pingCooldownUntil = now + PING_COOLDOWN_MS;
   savePings();
 
@@ -1585,7 +1656,7 @@ function firePing() {
   }
 
   vibrate([60, 40, 60]);
-  const left = Math.max(0, maxP - S.pingsUsed);
+  const left = me()?.infectedAt ? Math.max(0, pingsLeft() - 1) : pingsLeft();
   toast(`📡 Ping Radar — captured ${capturedCount} runner snapshot${capturedCount === 1 ? '' : 's'} (${left} left)`);
   renderPingButton();
 }
@@ -1599,8 +1670,7 @@ function renderPingButton() {
   }
 
   const now = Date.now();
-  const maxP = getMaxPings();
-  const left = Math.max(0, maxP - S.pingsUsed);
+  const left = pingsLeft();
   let text, mode, progress = 0;
 
   if (phase() !== STATUS.PLAYING) {
@@ -1649,13 +1719,33 @@ async function submitHunterTag() {
   el.tagSubmitBtn.disabled = true;
 
   try {
-    await playersRef.child(targetId).update({
-      eliminated: true,
-      eliminatedBy: S.name || 'Hunter',
-      exposed: false,
-    });
-    vibrate([200, 100, 200, 100, 400]);
-    toast(`💥 TAGGED! ${runner.name} is eliminated!`, '', 4000);
+    const hunterName = S.name || 'Hunter';
+    if (isInfection()) {
+      const key = roomRef.child('activity').push().key;
+      await roomRef.update({
+        [`players/${targetId}/role`]: 'hunter',
+        [`players/${targetId}/infectedAt`]: Date.now(),
+        [`players/${targetId}/taggedBy`]: hunterName,
+        [`players/${targetId}/pingsRemaining`]: 1,
+        [`players/${targetId}/tagCode`]: null,
+        [`players/${targetId}/eliminated`]: false,
+        [`players/${targetId}/exposed`]: false,
+        [`activity/${key}`]: {
+          text: `☣️ ${runner.name} was infected by ${hunterName}!`,
+          ts: firebase.database.ServerValue.TIMESTAMP,
+        },
+      });
+      vibrate([200, 100, 200, 100, 400]);
+      toast(`☣️ INFECTED! ${runner.name} is now a hunter!`, '', 4000);
+    } else {
+      await playersRef.child(targetId).update({
+        eliminated: true,
+        eliminatedBy: hunterName,
+        exposed: false,
+      });
+      vibrate([200, 100, 200, 100, 400]);
+      toast(`💥 TAGGED! ${runner.name} is eliminated!`, '', 4000);
+    }
     el.tagCodeInput.value = '';
 
     if (isHost()) {
@@ -1668,6 +1758,73 @@ async function submitHunterTag() {
     S.tagSubmitting = false;
     el.tagSubmitBtn.disabled = false;
   }
+}
+
+/* ---------- Infection takeover (runs on the infected player's phone) ---------- */
+function triggerInfection() {
+  S.infectPending = true;
+  el.infectedOverlay.classList.remove('hidden');
+  vibrate([200, 100, 200, 100, 400]);
+  setTimeout(() => {
+    S.infectPending = false;
+    el.infectedOverlay.classList.add('hidden');
+    if (S.inGame) {
+      S.pingCooldownUntil = 0;
+      refreshGame(); // flips to Hunter theme: red chip, ping button, tag bar, red marker
+    }
+  }, 3000);
+}
+
+/* ---------- Player roster drawer ---------- */
+function setRosterOpen(open) {
+  el.rosterDrawer.classList.toggle('open', open);
+  el.rosterDrawer.setAttribute('aria-hidden', String(!open));
+  el.rosterPill.setAttribute('aria-expanded', String(open));
+  el.rosterBackdrop.classList.toggle('hidden', !open);
+}
+
+function rosterRow(p, kind, extra) {
+  const row = document.createElement('div');
+  row.className = `roster-row${kind === 'out' ? ' out' : ''}`;
+  const dot = document.createElement('span');
+  dot.className = `roster-dot ${kind}`;
+  const name = document.createElement('span');
+  name.className = 'roster-name';
+  name.textContent = p.name;
+  row.append(dot, name);
+  if (extra) {
+    const t = document.createElement('span');
+    t.className = 'roster-tag';
+    t.textContent = extra;
+    row.appendChild(t);
+  }
+  return row;
+}
+
+function renderRoster() {
+  if (!S.inGame) return;
+  const all = Object.values(S.players);
+  const out = all.filter((p) => p.eliminated);
+  const hunters = all.filter((p) => p.role === 'hunter' && !p.eliminated);
+  const runners = all.filter((p) => p.role === 'runner' && !p.eliminated);
+  const alive = hunters.length + runners.length;
+
+  el.rosterPillText.textContent = `👥 Players (${alive} Alive)`;
+  el.rosterSummary.textContent = `Hunters (${hunters.length}) | Runners Left (${runners.length})`;
+
+  const frag = document.createDocumentFragment();
+  const group = (title, list, kind, extraFn) => {
+    if (!list.length) return;
+    const h = document.createElement('div');
+    h.className = 'roster-group-title';
+    h.textContent = title;
+    frag.appendChild(h);
+    list.forEach((p) => frag.appendChild(rosterRow(p, kind, extraFn ? extraFn(p) : '')));
+  };
+  group('Hunters', hunters, 'hunter', (p) => (p.infectedAt ? '☣️' : ''));
+  group('Active Runners', runners, 'runner');
+  group('Eliminated', out, 'out', () => 'Caught');
+  el.rosterBody.replaceChildren(frag);
 }
 
 /* ---------- Role splash ---------- */
@@ -1825,6 +1982,9 @@ el.endGameBtn.addEventListener('click', endGame);
 el.recenterBtn.addEventListener('click', () => setFollow(true));
 el.reveal.addEventListener('click', hideReveal);
 el.pingBtn.addEventListener('click', firePing);
+el.rosterPill.addEventListener('click', () => setRosterOpen(!el.rosterDrawer.classList.contains('open')));
+el.rosterClose.addEventListener('click', () => setRosterOpen(false));
+el.rosterBackdrop.addEventListener('click', () => setRosterOpen(false));
 el.distToggleBtn.addEventListener('click', () => el.distanceHud.classList.toggle('expanded'));
 
 // Host settings sliders & toggle
