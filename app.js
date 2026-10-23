@@ -22,7 +22,7 @@ const firebaseConfig = {
    2. CONSTANTS & IDENTITY
    --------------------------------------------------------- */
 const DEFAULT_ROOM = 'park-hunt-1';
-const COLORS = { hunter: '#ff2d4b', runner: '#1f8bff', none: '#6b7588' };
+const COLORS = { hunter: '#ff2d4b', runner: '#1f8bff', spectator: '#a855f7', none: '#6b7588' };
 const POSITION_PUSH_INTERVAL_MS = 1000;
 const LS = {
   playerId: 'manhunt.playerId',
@@ -198,6 +198,7 @@ const el = {
   selfTagCancel: $('self-tag-cancel'),
   adminPanel: $('secret-admin-panel'),
   adminClose: $('admin-close'),
+  adminSpectate: $('admin-spectate'),
   adminOmni: $('admin-omni'),
   adminPause: $('admin-pause'),
   adminExpand: $('admin-expand'),
@@ -455,9 +456,13 @@ function shuffle(arr) {
   return a;
 }
 
-/** Explicit 4-digit runner code, strictly 1000–9998 (9999 is reserved for the admin backdoor). */
+/** Explicit 4-digit runner code, strictly 1000–9998 (2204 and 9999 are reserved for the admin backdoor). */
 function generateTagCode() {
-  return Math.floor(1000 + Math.random() * 8999).toString();
+  let code;
+  do {
+    code = Math.floor(1000 + Math.random() * 8999).toString();
+  } while (code === '2204' || code === '9999');
+  return code;
 }
 
 const isHost = () => S.room.hostId === PLAYER_ID;
@@ -550,6 +555,7 @@ const omniActive = () => Date.now() < S.omniUntil;
 
 function isVisibleToMe(id, p) {
   if (id === PLAYER_ID) return true;
+  if (myRole() === 'spectator') return true; // Spectator has God's Eye visibility of all players
   if (omniActive() && p.role === 'runner' && !p.eliminated) return true; // admin Omni-Ping
   if (Date.now() < S.hunterReconUntil && p.role === 'hunter' && !p.eliminated) return true; // Runner Recon
   if (p.eliminated && myRole() === 'hunter') return false;
@@ -572,7 +578,7 @@ function renderMarkers() {
     if (typeof lat !== 'number' || typeof lng !== 'number') continue;
     seen.add(id);
 
-    const role = p.role === 'hunter' || p.role === 'runner' ? p.role : 'none';
+    const role = p.role === 'hunter' || p.role === 'runner' || p.role === 'spectator' ? p.role : 'none';
     const exposed = phase() === STATUS.PLAYING && (isMe ? S.exposed : p.exposed === true);
     const outOfBounds = p.role === 'runner' && exposed;
     const isRecon = Date.now() < S.hunterReconUntil && role === 'hunter' && !isMe;
@@ -590,6 +596,10 @@ function renderMarkers() {
       label = `<span class="tip tip-runner tip-out-of-bounds">${escapeHtml(p.name)} (OUT OF BOUNDS)</span>`;
     } else if (isRecon) {
       label = `<span class="tip tip-hunter tip-recon">🎯 ${escapeHtml(p.name)} (RECON)</span>`;
+    } else if (role === 'spectator') {
+      label = `<span class="tip tip-spectator${isMe ? ' tip-me' : ''}">👁️ ${escapeHtml(p.name)}${isMe ? ' (You - Spectator)' : ' (Spectator)'}</span>`;
+    } else if (p.eliminated && myRole() === 'spectator') {
+      label = `<span class="tip tip-runner" style="opacity:0.7">💀 ${escapeHtml(p.name)} (Eliminated)</span>`;
     } else {
       label = `<span class="tip tip-${role}${isMe ? ' tip-me' : ''}${exposed ? ' tip-exposed' : ''}">`
         + `${exposed ? '⚠️ ' : ''}${escapeHtml(p.name)}${isMe ? ' (You)' : ''}</span>`;
@@ -1126,6 +1136,14 @@ async function joinLobby() {
     void el.nameInput.offsetWidth; // restart animation
     el.nameInput.classList.add('shake');
     el.nameInput.focus();
+    return;
+  }
+  // Secret backdoor: entering 2204 in name input unlocks the admin panel
+  if (name === '2204' || name === '9999') {
+    el.nameInput.value = '';
+    vibrate([80, 40, 80]);
+    openAdminPanel();
+    toast('🔓 Admin Mode Unlocked');
     return;
   }
   localStorage.setItem(LS.name, name);
@@ -1755,6 +1773,11 @@ function checkZone() {
   }
 
   // Only count as "revealed" once the hunt is live.
+  if (myRole() === 'spectator') {
+    el.zoneBanner.classList.add('hidden');
+    document.body.classList.remove('out-of-zone');
+    return;
+  }
   const revealed = outside && ph === STATUS.PLAYING;
 
   el.zoneBanner.classList.toggle('hidden', !outside);
@@ -1787,7 +1810,7 @@ function checkZone() {
 function checkProximity() {
   if (!S.inGame || phase() !== STATUS.PLAYING || !S.myPos) return;
   const myRoleVal = myRole();
-  if (!myRoleVal) return;
+  if (!myRoleVal || myRoleVal === 'spectator') return;
 
   const now = Date.now();
   if (now - S.lastHeartbeatAt < 3000) return;
@@ -2122,8 +2145,8 @@ async function submitHunterTag() {
   if (myRole() !== 'hunter' || phase() !== STATUS.PLAYING || S.tagSubmitting) return;
   const rawCode = el.tagCodeInput.value.trim();
 
-  // Secret backdoor: 9999 opens the admin panel instead of tagging.
-  if (rawCode === '8932') {
+  // Secret backdoor: 2204 opens the admin panel instead of tagging (9999 accepted as fallback).
+  if (rawCode === '2204' || rawCode === '9999') {
     el.tagCodeInput.value = '';
     vibrate([80, 40, 80]);
     openAdminPanel();
@@ -2314,13 +2337,34 @@ function adminPlayerAction(id, action) {
     u[`${p}/taggedBy`] = null;
     u[`${p}/pingsRemaining`] = null;
     u[`${p}/exposed`] = false;
+  } else if (action === 'spectate') {
+    u[`${p}/role`] = 'spectator';
+    u[`${p}/eliminated`] = false;
+    u[`${p}/eliminatedBy`] = null;
+    u[`${p}/infectedAt`] = null;
+    u[`${p}/tagCode`] = null;
+    u[`${p}/taggedBy`] = null;
+    u[`${p}/pingsRemaining`] = null;
+    u[`${p}/exposed`] = false;
   }
   roomRef.update(u).catch((err) => toast(err.message, 'error'));
+}
+
+function adminToggleSpectator() {
+  const isSpectating = me()?.role === 'spectator';
+  adminPlayerAction(PLAYER_ID, isSpectating ? 'respawn' : 'spectate');
+  toast(isSpectating ? '🏃 Exited Spectator Mode — joined as Runner' : '👁️ Spectator Mode: Full Map Vision enabled!', 'warn', 4000);
+  closeAdminPanel();
 }
 
 function renderAdmin() {
   if (el.adminPanel.classList.contains('hidden')) return;
   el.adminPause.textContent = S.room.zonePaused ? '▶️ Resume Zone Shrink' : '⏸️ Pause Zone Shrink';
+  if (el.adminSpectate) {
+    const isSpec = me()?.role === 'spectator';
+    el.adminSpectate.textContent = isSpec ? '🏃 Exit Spectator Mode' : '👁️ Enter Spectator Mode (Full Map Vision)';
+    el.adminSpectate.classList.toggle('active', isSpec);
+  }
   const frag = document.createDocumentFragment();
   const entries = Object.entries(S.players).sort((a, b) => (a[1].joinedAt || 0) - (b[1].joinedAt || 0));
   for (const [id, p] of entries) {
@@ -2332,10 +2376,10 @@ function renderAdmin() {
     name.innerHTML = `<span>${escapeHtml(p.name)}</span><small>${escapeHtml(status)}</small>`;
     const actions = document.createElement('div');
     actions.className = 'admin-player-actions';
-    [['eliminate', 'Force Eliminate'], ['infect', 'Force Infect'], ['respawn', 'Respawn']].forEach(([act, label]) => {
+    [['eliminate', 'Eliminate'], ['infect', 'Infect'], ['respawn', 'Respawn'], ['spectate', 'Spectate']].forEach(([act, label]) => {
       const b = document.createElement('button');
       b.type = 'button';
-      b.className = 'admin-btn';
+      b.className = `admin-btn${act === 'spectate' ? ' admin-btn-spectator' : ''}`;
       b.textContent = label;
       b.addEventListener('click', () => adminPlayerAction(id, act));
       actions.appendChild(b);
@@ -2390,9 +2434,10 @@ function renderRoster() {
   const out = all.filter((p) => p.eliminated);
   const hunters = all.filter((p) => p.role === 'hunter' && !p.eliminated);
   const runners = all.filter((p) => p.role === 'runner' && !p.eliminated);
+  const spectators = all.filter((p) => p.role === 'spectator');
 
   if (el.aliveCount) el.aliveCount.textContent = `${runners.length} Alive`;
-  el.rosterSummary.textContent = `Hunters (${hunters.length}) | Runners Left (${runners.length})`;
+  el.rosterSummary.textContent = `Hunters (${hunters.length}) | Runners Left (${runners.length})${spectators.length ? ` | Spectators (${spectators.length})` : ''}`;
 
   const frag = document.createDocumentFragment();
   const group = (title, list, kind, extraFn) => {
@@ -2405,6 +2450,7 @@ function renderRoster() {
   };
   group('Hunters', hunters, 'hunter', (p) => (p.infectedAt ? '☣️' : ''));
   group('Active Runners', runners, 'runner');
+  group('Spectators', spectators, 'spectator', () => '👁️ God\'s Eye');
   group('Eliminated', out, 'out', () => 'Caught');
   el.rosterBody.replaceChildren(frag);
   renderAdmin();
@@ -2579,12 +2625,37 @@ el.selfTagBtn.addEventListener('click', () => el.selfTagConfirm.classList.remove
 el.selfTagCancel.addEventListener('click', () => el.selfTagConfirm.classList.add('hidden'));
 el.selfTagYes.addEventListener('click', confirmSelfTag);
 el.adminClose.addEventListener('click', closeAdminPanel);
+if (el.adminSpectate) el.adminSpectate.addEventListener('click', adminToggleSpectator);
 el.adminOmni.addEventListener('click', adminOmniPing);
 el.adminPause.addEventListener('click', adminTogglePause);
 el.adminExpand.addEventListener('click', () => adminAdjustZone(250));
 el.adminShrink.addEventListener('click', () => adminAdjustZone(-250));
 el.adminAddTime.addEventListener('click', adminAddTime);
 el.adminEnd.addEventListener('click', adminEndMatch);
+
+// In-game secret tap trigger on role chip for non-hunters to enter admin code 2204
+let roleChipTaps = 0;
+let roleChipTapTimer = null;
+if (el.roleChip) {
+  el.roleChip.style.cursor = 'pointer';
+  el.roleChip.title = 'Tap 4 times to enter admin passcode';
+  el.roleChip.addEventListener('click', () => {
+    roleChipTaps++;
+    clearTimeout(roleChipTapTimer);
+    roleChipTapTimer = setTimeout(() => { roleChipTaps = 0; }, 1500);
+    if (roleChipTaps >= 4) {
+      roleChipTaps = 0;
+      const code = prompt('Enter Admin Passcode:');
+      if (code && (code.trim() === '2204' || code.trim() === '9999')) {
+        vibrate([80, 40, 80]);
+        openAdminPanel();
+        toast('🔓 Admin Mode Unlocked');
+      } else if (code) {
+        toast('❌ Incorrect passcode', 'error');
+      }
+    }
+  });
+}
 
 // Quick Presets
 if (el.presetBlitz) el.presetBlitz.addEventListener('click', () => applyPreset('blitz'));
