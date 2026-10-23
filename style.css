@@ -542,6 +542,21 @@ h1 {
   background: #fff;
   box-shadow: 0 0 8px #fff;
 }
+.role-chip.spectator,
+.role-chip.role-spectator {
+  background: #9333ea;
+  box-shadow: 0 0 14px rgba(168, 85, 247, 0.7);
+  animation: pulsePurple 2s infinite;
+}
+.role-chip.spectator .chip-dot,
+.role-chip.role-spectator .chip-dot {
+  background: #f3e8ff;
+  box-shadow: 0 0 8px #d8b4fe;
+}
+@keyframes pulsePurple {
+  0%, 100% { box-shadow: 0 0 8px rgba(168, 85, 247, 0.4); }
+  50% { box-shadow: 0 0 18px rgba(168, 85, 247, 0.9); }
+}
 .hud-divider {
   color: rgba(255, 255, 255, 0.28);
   font-weight: 300;
@@ -2237,11 +2252,33 @@ body.out-of-zone::after {
 }
 .admin-btn:active { background: rgba(255, 255, 255, 0.2); }
 .admin-btn-danger { background: rgba(239, 68, 68, 0.3); border-color: #ef4444; }
+.admin-btn-spectator {
+  background: linear-gradient(135deg, rgba(147, 51, 234, 0.4), rgba(168, 85, 247, 0.35));
+  border-color: #a855f7;
+  color: #f3e8ff;
+  font-weight: 800;
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.25);
+}
+.admin-btn-spectator:active {
+  background: linear-gradient(135deg, rgba(147, 51, 234, 0.65), rgba(168, 85, 247, 0.55));
+}
+.admin-btn-spectator.active {
+  background: linear-gradient(135deg, #7e22ce, #9333ea);
+  border-color: #c084fc;
+  box-shadow: 0 0 16px rgba(168, 85, 247, 0.6);
+}
 .admin-player { padding: 8px 0; border-top: 1px solid rgba(255, 255, 255, 0.08); }
 .admin-player-name { font-weight: 800; font-size: 14px; margin-bottom: 6px; display: flex; justify-content: space-between; gap: 8px; }
 .admin-player-name small { font-weight: 600; color: var(--muted); }
-.admin-player-actions { display: flex; gap: 6px; }
+.admin-player-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .admin-player-actions .admin-btn { min-height: 44px; font-size: 12px; padding: 4px 6px; }
+.roster-dot.spectator { background: #a855f7; box-shadow: 0 0 8px rgba(168, 85, 247, 0.7); }
+.tip-spectator {
+  background: rgba(147, 51, 234, 0.92) !important;
+  border-color: #c084fc !important;
+  color: #fff !important;
+  font-weight: 800 !important;
+}
 
 /* ---------- Quick Presets Bar ---------- */
 .preset-group {
