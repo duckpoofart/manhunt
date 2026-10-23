@@ -22,7 +22,7 @@
   <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
 
-  <link rel="stylesheet" href="style.css?v=7" />
+  <link rel="stylesheet" href="style.css?v=9" />
 </head>
 
 <body>
@@ -172,6 +172,7 @@
   <section id="roster-drawer" class="roster-drawer" role="dialog" aria-label="Player roster" aria-hidden="true">
     <div class="roster-header">
       <span id="roster-summary" class="roster-summary">Hunters (0) | Runners Left (0)</span>
+      <button id="roster-admin-btn" class="roster-admin-btn" type="button" aria-label="Field admin panel">⚙️ Admin</button>
       <button id="roster-close" class="roster-close" type="button" aria-label="Close roster">✕</button>
     </div>
     <div id="roster-body" class="roster-body"></div>
@@ -320,24 +321,24 @@
                 <span class="accordion-chevron" aria-hidden="true">▾</span>
               </summary>
               <div class="accordion-content">
-                <!-- Match Duration Slider (5–30m) -->
+                <!-- Match Duration Slider (5–120m) -->
                 <div class="slider-field">
                   <div class="slider-head">
                     <label for="duration-slider">Match Duration</label>
                     <output id="duration-value" for="duration-slider" class="slider-value mono">Match Duration: 15 min</output>
                   </div>
-                  <input id="duration-slider" class="range" type="range" min="5" max="30" step="5" value="15" />
-                  <div class="slider-scale"><span>5 min (1 ping)</span><span>30 min (6 pings)</span></div>
+                  <input id="duration-slider" class="range" type="range" min="5" max="120" step="5" value="15" />
+                  <div class="slider-scale"><span>5 min (1 ping)</span><span>120 min (24 pings)</span></div>
                 </div>
 
-                <!-- Grace Period Slider (30–180s) -->
+                <!-- Grace Period Slider (5s–300s / 5m) -->
                 <div class="slider-field">
                   <div class="slider-head">
                     <label for="grace-slider">Grace Period</label>
                     <output id="grace-value" for="grace-slider" class="slider-value mono">Grace Period: 1:30</output>
                   </div>
-                  <input id="grace-slider" class="range" type="range" min="30" max="180" step="15" value="90" />
-                  <div class="slider-scale"><span>0:30</span><span>3:00</span></div>
+                  <input id="grace-slider" class="range" type="range" min="5" max="300" step="5" value="90" />
+                  <div class="slider-scale"><span>0:05</span><span>5:00</span></div>
                 </div>
 
                 <!-- Game Mode Toggle: Infection Mode -->
@@ -361,16 +362,14 @@
                 <span class="accordion-chevron" aria-hidden="true">▾</span>
               </summary>
               <div class="accordion-content">
-                <!-- Shrink Pace Dropdown -->
-                <div class="select-field">
-                  <label for="shrink-pace-select" class="field-label">Zone Shrink Pace</label>
-                  <select id="shrink-pace-select" class="custom-select">
-                    <option value="50">Casual — 50 ft/min</option>
-                    <option value="100">Standard — 100 ft/min</option>
-                    <option value="150" selected>Fast — 150 ft/min</option>
-                    <option value="200">Intense — 200 ft/min</option>
-                    <option value="250">Extreme — 250 ft/min</option>
-                  </select>
+                <!-- Zone Shrink Speed Slider -->
+                <div id="shrink-speed-group" class="slider-field">
+                  <div class="slider-head">
+                    <label for="shrink-slider">📉 Zone Shrink Speed</label>
+                    <output id="shrink-value" for="shrink-slider" class="slider-value mono">Shrink Speed: 150 ft/min</output>
+                  </div>
+                  <input id="shrink-slider" class="range range-min" type="range" min="10" max="300" step="5" value="150" />
+                  <div class="slider-scale"><span>10 ft/min</span><span>300 ft/min</span></div>
                 </div>
 
                 <!-- Out-of-Bounds Penalty Dropdown -->
@@ -434,15 +433,6 @@
                   <div class="slider-scale"><span>50 ft</span><span>500 ft</span></div>
                 </div>
 
-                <!-- Hidden synced shrink slider for legacy bindings -->
-                <div id="shrink-speed-group" class="slider-field hidden">
-                  <div class="slider-head">
-                    <label for="shrink-slider">📉 Shrink Speed</label>
-                    <output id="shrink-value" for="shrink-slider" class="slider-value mono">Shrink Speed: 150 ft/min</output>
-                  </div>
-                  <input id="shrink-slider" class="range" type="range" min="1" max="300" step="1" value="150" />
-                </div>
-
                 <p id="zone-summary" class="zone-summary"></p>
               </div>
             </details>
@@ -480,6 +470,7 @@
         </div>
 
         <button id="leave-btn" class="btn btn-ghost btn-block" type="button">Leave Lobby</button>
+        <button id="lobby-admin-btn" class="btn btn-ghost btn-block btn-sm" type="button" style="opacity: 0.75; font-size: 12px; margin-top: 6px;">⚙️ Admin Access (Passcode: 2204)</button>
       </div>
     </div>
   </section>
@@ -501,7 +492,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 
-  <script src="app.js?v=7"></script>
+  <script src="app.js?v=9"></script>
 </body>
 
 </html>
