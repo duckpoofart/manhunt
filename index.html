@@ -22,7 +22,7 @@
   <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
 
-  <link rel="stylesheet" href="style.css?v=5" />
+  <link rel="stylesheet" href="style.css?v=7" />
 </head>
 
 <body>
@@ -58,13 +58,15 @@
     </div>
   </div>
 
-  <!-- Secret field admin panel (opened by entering 9999 in the tag input) -->
+  <!-- Secret field admin panel (opened by entering 2204 in the tag input) -->
   <div id="secret-admin-panel" class="admin-panel hidden" role="dialog" aria-modal="true" aria-labelledby="admin-title">
     <div class="admin-card">
       <div class="admin-header">
         <h2 id="admin-title">🛠️ Field Admin Controls</h2>
         <button id="admin-close" class="admin-close" type="button" aria-label="Close admin panel">✕</button>
       </div>
+      <h3 class="admin-section">Spectator Mode (God's Eye)</h3>
+      <button id="admin-spectate" class="admin-btn admin-btn-spectator" type="button">👁️ Enter Spectator Mode (Full Map Vision)</button>
       <h3 class="admin-section">Global Radar</h3>
       <button id="admin-omni" class="admin-btn" type="button">📡 Reveal All Runners (15s)</button>
       <h3 class="admin-section">Safe Zone</h3>
@@ -499,7 +501,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 
-  <script src="app.js?v=5"></script>
+  <script src="app.js?v=7"></script>
 </body>
 
 </html>
