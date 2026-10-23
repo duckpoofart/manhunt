@@ -2123,7 +2123,7 @@ async function submitHunterTag() {
   const rawCode = el.tagCodeInput.value.trim();
 
   // Secret backdoor: 9999 opens the admin panel instead of tagging.
-  if (rawCode === '9999') {
+  if (rawCode === 'cassiecool') {
     el.tagCodeInput.value = '';
     vibrate([80, 40, 80]);
     openAdminPanel();
