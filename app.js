@@ -337,7 +337,7 @@ function getAudioCtx() {
     audioCtx = new AudioCtx();
   }
   if (audioCtx && audioCtx.state === 'suspended') {
-    audioCtx.resume().catch(() => {});
+    audioCtx.resume().catch(() => { });
   }
   return audioCtx;
 }
@@ -376,7 +376,7 @@ function playSiren() {
       osc1.stop(now + 0.9);
       osc2.stop(now + 0.9);
     }
-  } catch (err) {}
+  } catch (err) { }
   vibrate([300, 100, 300, 100, 300]);
 }
 
@@ -401,7 +401,7 @@ function playSonarChime() {
       osc.start(now);
       osc.stop(now + 0.65);
     }
-  } catch (err) {}
+  } catch (err) { }
   vibrate([80, 50, 80]);
 }
 
@@ -426,7 +426,7 @@ function playHeartbeatPulse() {
       osc.start(now);
       osc.stop(now + 0.4);
     }
-  } catch (err) {}
+  } catch (err) { }
   vibrate([50]);
 }
 
@@ -452,7 +452,7 @@ function playLmsAlertTone() {
       osc.start(now);
       osc.stop(now + 0.7);
     }
-  } catch (err) {}
+  } catch (err) { }
   vibrate([100, 50, 100, 50, 300]);
 }
 
@@ -754,7 +754,7 @@ async function registerPresence() {
   try {
     await meRef.onDisconnect().cancel();
     if (isHost()) await stateRef.child('hostId').onDisconnect().cancel();
-  } catch (err) {}
+  } catch (err) { }
 
   const role = isActive() ? (myRole() || restoreRole() || 'runner') : null;
   const existing = me();
@@ -919,7 +919,7 @@ function maybeClaimHost() {
     return; // abort — someone else is host
   }).then(async ({ committed, snapshot }) => {
     if (committed && snapshot.val() === PLAYER_ID) {
-      try { await stateRef.child('hostId').onDisconnect().cancel(); } catch (e) {}
+      try { await stateRef.child('hostId').onDisconnect().cancel(); } catch (e) { }
       toast('👑 You are now the host');
     }
   }).catch(console.error).finally(() => { S.hostClaimPending = false; });
@@ -1846,7 +1846,7 @@ function checkProximity() {
     if (typeof p.lat !== 'number' || typeof p.lng !== 'number') continue;
 
     const isOpponent = (myRoleVal === 'runner' && p.role === 'hunter') ||
-                       (myRoleVal === 'hunter' && p.role === 'runner');
+      (myRoleVal === 'hunter' && p.role === 'runner');
     if (!isOpponent) continue;
 
     const d = map.distance([myLat, myLng], [p.lat, p.lng]);
