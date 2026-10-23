@@ -253,6 +253,9 @@ const el = {
   rosterDrawer: $('roster-drawer'),
   rosterSummary: $('roster-summary'),
   rosterClose: $('roster-close'),
+  rosterAdminBtn: $('roster-admin-btn'),
+  lobbyAdminBtn: $('lobby-admin-btn'),
+  appTitle: $('app-title'),
   rosterBody: $('roster-body'),
 };
 const SLIDERS = [el.durationSlider, el.radiusSlider, el.minRadiusSlider, el.shrinkSlider, el.graceSlider];
@@ -306,6 +309,25 @@ function formatMSS(sec) {
 const fmtFt = (ft) => Math.round(ft).toLocaleString();
 
 function vibrate(pattern) { if (navigator.vibrate) navigator.vibrate(pattern); }
+
+function isAdminPasscode(code) {
+  if (code === null || code === undefined) return false;
+  const s = String(code).trim().replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+  return s === '2204' || s === '9999' || s === 'admin';
+}
+
+function promptAdminPasscode() {
+  const code = prompt('Enter Admin Passcode (2204):');
+  if (code === null) return;
+  if (isAdminPasscode(code)) {
+    vibrate([80, 40, 80]);
+    openAdminPanel();
+    toast('🔓 Admin Mode Unlocked');
+  } else if (code.trim() !== '') {
+    vibrate([100, 50, 100]);
+    toast('❌ Incorrect passcode (Admin code is 2204)', 'error');
+  }
+}
 
 /* ---------- Web Audio API Cues ---------- */
 let audioCtx = null;
@@ -907,17 +929,16 @@ function maybeClaimHost() {
    10. HOST SETTINGS — sliders + live zone preview
    --------------------------------------------------------- */
 function readSettings() {
-  const shrinkPace = el.shrinkPaceSelect ? Number(el.shrinkPaceSelect.value) : Number(el.shrinkSlider.value);
   return {
     durationMin: Number(el.durationSlider.value) || 15,
     graceSec: Number(el.graceSlider.value),
     startRadiusFt: Number(el.radiusSlider.value),
     minRadiusFt: Number(el.minRadiusSlider.value),
-    shrinkFtPerMin: isNaN(shrinkPace) ? Number(el.shrinkSlider.value) : shrinkPace,
+    shrinkFtPerMin: Number(el.shrinkSlider.value) || 150,
     shrinkEnabled: el.shrinkToggle ? el.shrinkToggle.checked : true,
     supplyDropEnabled: el.supplyDropToggle ? el.supplyDropToggle.checked : true,
     lmsEnabled: el.lmsToggle ? el.lmsToggle.checked : true,
-    oobPenalty: el.oobPenaltySelect ? el.oobPenaltySelect.value : 'reveal',
+    oobPenalty: el.oobPenaltySelect ? el.oobPenaltySelect.value : 'standard',
   };
 }
 
@@ -1138,8 +1159,8 @@ async function joinLobby() {
     el.nameInput.focus();
     return;
   }
-  // Secret backdoor: entering 2204 in name input unlocks the admin panel
-  if (name === '2204' || name === '9999') {
+  // Secret backdoor: entering 2204 (or 9999 / admin) in name input unlocks the admin panel
+  if (isAdminPasscode(name)) {
     el.nameInput.value = '';
     vibrate([80, 40, 80]);
     openAdminPanel();
@@ -2142,19 +2163,30 @@ function renderPingButton() {
 
 /* ---------- Secret Passcode Tag Submission ---------- */
 async function submitHunterTag() {
-  if (myRole() !== 'hunter' || phase() !== STATUS.PLAYING || S.tagSubmitting) return;
-  const rawCode = el.tagCodeInput.value.trim();
+  const rawCode = (el.tagCodeInput?.value || '').trim();
 
-  // Secret backdoor: 2204 opens the admin panel instead of tagging (9999 accepted as fallback).
-  if (rawCode === '2204' || rawCode === '9999') {
-    el.tagCodeInput.value = '';
+  // Secret backdoor: 2204 (or 9999 / 'admin') opens the admin panel immediately under ANY condition
+  if (isAdminPasscode(rawCode)) {
+    if (el.tagCodeInput) el.tagCodeInput.value = '';
     vibrate([80, 40, 80]);
     openAdminPanel();
     toast('🔓 Admin Mode Unlocked');
     return;
   }
+
+  // Not an admin code — verify hunter role and game status for tagging runners
+  if (myRole() !== 'hunter') {
+    toast('⚠️ Only active hunters can submit tag codes (Admin code is 2204)', 'warn');
+    return;
+  }
+  if (phase() === STATUS.GRACE) {
+    toast('⏳ Hunters are frozen during grace period! (Admin code is 2204)', 'warn');
+    return;
+  }
+  if (phase() !== STATUS.PLAYING || S.tagSubmitting) return;
+
   if (!rawCode || rawCode.length !== 4 || !/^\d{4}$/.test(rawCode)) {
-    toast('⚠️ Enter a 4-digit runner tag code', 'warn');
+    toast('⚠️ Enter a 4-digit runner tag code (Admin code: 2204)', 'warn');
     el.tagCodeInput.focus();
     return;
   }
@@ -2165,7 +2197,7 @@ async function submitHunterTag() {
   );
 
   if (!match) {
-    toast(`❌ Invalid code [${rawCode}] — No runner matched!`, 'error');
+    toast(`❌ Invalid runner code [${rawCode}]! (Admin code is 2204)`, 'error');
     vibrate([100, 50, 100]);
     el.tagCodeInput.value = '';
     return;
@@ -2633,29 +2665,32 @@ el.adminShrink.addEventListener('click', () => adminAdjustZone(-250));
 el.adminAddTime.addEventListener('click', adminAddTime);
 el.adminEnd.addEventListener('click', adminEndMatch);
 
-// In-game secret tap trigger on role chip for non-hunters to enter admin code 2204
-let roleChipTaps = 0;
-let roleChipTapTimer = null;
-if (el.roleChip) {
-  el.roleChip.style.cursor = 'pointer';
-  el.roleChip.title = 'Tap 4 times to enter admin passcode';
-  el.roleChip.addEventListener('click', () => {
-    roleChipTaps++;
-    clearTimeout(roleChipTapTimer);
-    roleChipTapTimer = setTimeout(() => { roleChipTaps = 0; }, 1500);
-    if (roleChipTaps >= 4) {
-      roleChipTaps = 0;
-      const code = prompt('Enter Admin Passcode:');
-      if (code && (code.trim() === '2204' || code.trim() === '9999')) {
-        vibrate([80, 40, 80]);
-        openAdminPanel();
-        toast('🔓 Admin Mode Unlocked');
-      } else if (code) {
-        toast('❌ Incorrect passcode', 'error');
-      }
-    }
-  });
+// Direct Admin Access buttons
+if (el.rosterAdminBtn) el.rosterAdminBtn.addEventListener('click', promptAdminPasscode);
+if (el.lobbyAdminBtn) el.lobbyAdminBtn.addEventListener('click', promptAdminPasscode);
+
+// Secret 3-tap triggers on HUD and Lobby title
+let adminTapCount = 0;
+let adminTapTimer = null;
+function handleSecretAdminTap() {
+  adminTapCount++;
+  clearTimeout(adminTapTimer);
+  adminTapTimer = setTimeout(() => { adminTapCount = 0; }, 1400);
+  if (adminTapCount >= 3) {
+    adminTapCount = 0;
+    promptAdminPasscode();
+  }
 }
+if (el.roleChip) el.roleChip.addEventListener('click', handleSecretAdminTap);
+if (el.appTitle) el.appTitle.addEventListener('click', handleSecretAdminTap);
+
+// Keyboard shortcut (Ctrl+Shift+A or ~) for desktop testing
+window.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'a') || (e.key === '`' && !['INPUT', 'TEXTAREA'].includes(e.target.tagName))) {
+    e.preventDefault();
+    promptAdminPasscode();
+  }
+});
 
 // Quick Presets
 if (el.presetBlitz) el.presetBlitz.addEventListener('click', () => applyPreset('blitz'));
@@ -2689,7 +2724,10 @@ if (el.lmsToggle) {
 }
 el.minRadiusSlider.addEventListener('input', onMinRadiusInput);
 el.minRadiusSlider.addEventListener('change', () => updatePreview(true));
-el.shrinkSlider.addEventListener('input', renderSettings);
+el.shrinkSlider.addEventListener('input', () => {
+  renderSettings();
+  updatePreview(false);
+});
 el.graceSlider.addEventListener('input', renderSettings);
 el.zoneRecenterBtn.addEventListener('click', () => {
   P.manualCenter = null;
