@@ -60,7 +60,7 @@
     </div>
   </div>
 
-  <!-- Secret field admin panel (opened by entering 2204 in the tag input) -->
+  <!-- Secret field admin panel (opened via passcode) -->
   <div id="secret-admin-panel" class="admin-panel hidden" role="dialog" aria-modal="true" aria-labelledby="admin-title">
     <div class="admin-card">
       <div class="admin-header">
@@ -176,8 +176,7 @@
   <section id="roster-drawer" class="roster-drawer" role="dialog" aria-label="Player roster" aria-hidden="true">
     <div class="roster-header">
       <span id="roster-summary" class="roster-summary">Hunters (0) | Runners Left (0)</span>
-      <button id="roster-admin-btn" class="roster-admin-btn" type="button" aria-label="Field admin panel">⚙️
-        Admin</button>
+      <button id="roster-admin-btn" class="roster-admin-btn" type="button" aria-label="Settings">·</button>
       <button id="roster-close" class="roster-close" type="button" aria-label="Close roster">✕</button>
     </div>
     <div id="roster-body" class="roster-body"></div>
@@ -481,8 +480,8 @@
         </div>
 
         <button id="leave-btn" class="btn btn-ghost btn-block" type="button">Leave Lobby</button>
-        <button id="lobby-admin-btn" class="btn btn-ghost btn-block btn-sm" type="button"
-          style="opacity: 0.75; font-size: 12px; margin-top: 6px;">⚙️ Admin Access (Passcode: 2204)</button>
+        <button id="lobby-admin-btn" class="btn btn-ghost btn-block btn-sm" type="button" aria-label="Settings"
+          style="opacity: 0.12; font-size: 12px; margin-top: 6px; min-height: 32px;">·</button>
       </div>
     </div>
   </section>
