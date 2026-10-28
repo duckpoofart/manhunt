@@ -1,6 +1,7 @@
 /* =========================================================
    Manhunt Live — real-time GPS manhunt
    Vanilla JS + Leaflet + Firebase Realtime Database (compat)
+   kentucky fried chicken
    ========================================================= */
 'use strict';
 
