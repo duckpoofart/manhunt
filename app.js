@@ -313,11 +313,11 @@ function vibrate(pattern) { if (navigator.vibrate) navigator.vibrate(pattern); }
 function isAdminPasscode(code) {
   if (code === null || code === undefined) return false;
   const s = String(code).trim().replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-  return s === '2204' || s === '9999' || s === 'admin';
+  return s === '8623';
 }
 
 function promptAdminPasscode() {
-  const code = prompt('Enter Admin Passcode (2204):');
+  const code = prompt('Enter passcode:');
   if (code === null) return;
   if (isAdminPasscode(code)) {
     vibrate([80, 40, 80]);
@@ -325,7 +325,7 @@ function promptAdminPasscode() {
     toast('🔓 Admin Mode Unlocked');
   } else if (code.trim() !== '') {
     vibrate([100, 50, 100]);
-    toast('❌ Incorrect passcode (Admin code is 2204)', 'error');
+    toast('❌ Incorrect passcode', 'error');
   }
 }
 
@@ -478,12 +478,12 @@ function shuffle(arr) {
   return a;
 }
 
-/** Explicit 4-digit runner code, strictly 1000–9998 (2204 and 9999 are reserved for the admin backdoor). */
+/** Explicit 4-digit runner code, strictly 1000–9998 (8623 is reserved for admin access). */
 function generateTagCode() {
   let code;
   do {
     code = Math.floor(1000 + Math.random() * 8999).toString();
-  } while (code === '2204' || code === '9999');
+  } while (code === '8623');
   return code;
 }
 
@@ -1159,7 +1159,7 @@ async function joinLobby() {
     el.nameInput.focus();
     return;
   }
-  // Secret backdoor: entering 2204 (or 9999 / admin) in name input unlocks the admin panel
+  // Secret backdoor: entering the admin passcode in name input unlocks the admin panel
   if (isAdminPasscode(name)) {
     el.nameInput.value = '';
     vibrate([80, 40, 80]);
@@ -2165,7 +2165,7 @@ function renderPingButton() {
 async function submitHunterTag() {
   const rawCode = (el.tagCodeInput?.value || '').trim();
 
-  // Secret backdoor: 2204 (or 9999 / 'admin') opens the admin panel immediately under ANY condition
+  // Secret backdoor: admin passcode opens the admin panel immediately under ANY condition
   if (isAdminPasscode(rawCode)) {
     if (el.tagCodeInput) el.tagCodeInput.value = '';
     vibrate([80, 40, 80]);
@@ -2176,17 +2176,17 @@ async function submitHunterTag() {
 
   // Not an admin code — verify hunter role and game status for tagging runners
   if (myRole() !== 'hunter') {
-    toast('⚠️ Only active hunters can submit tag codes (Admin code is 2204)', 'warn');
+    toast('⚠️ Only active hunters can submit tag codes', 'warn');
     return;
   }
   if (phase() === STATUS.GRACE) {
-    toast('⏳ Hunters are frozen during grace period! (Admin code is 2204)', 'warn');
+    toast('⏳ Hunters are frozen during grace period!', 'warn');
     return;
   }
   if (phase() !== STATUS.PLAYING || S.tagSubmitting) return;
 
   if (!rawCode || rawCode.length !== 4 || !/^\d{4}$/.test(rawCode)) {
-    toast('⚠️ Enter a 4-digit runner tag code (Admin code: 2204)', 'warn');
+    toast('⚠️ Enter a 4-digit runner tag code', 'warn');
     el.tagCodeInput.focus();
     return;
   }
@@ -2197,7 +2197,7 @@ async function submitHunterTag() {
   );
 
   if (!match) {
-    toast(`❌ Invalid runner code [${rawCode}]! (Admin code is 2204)`, 'error');
+    toast(`❌ Invalid runner code [${rawCode}]!`, 'error');
     vibrate([100, 50, 100]);
     el.tagCodeInput.value = '';
     return;
