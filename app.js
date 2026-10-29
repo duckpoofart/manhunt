@@ -1,7 +1,6 @@
 /* =========================================================
    Manhunt Live — real-time GPS manhunt
    Vanilla JS + Leaflet + Firebase Realtime Database (compat)
-   kentucky fried chicken
    ========================================================= */
 'use strict';
 
@@ -31,6 +30,7 @@ const LS = {
   settings: 'manhunt.settings',
   role: (room) => `manhunt.role.${room}`,
   pings: (room, startedAt) => `manhunt.pings.${room}.${startedAt}`,
+  lastRoom: 'manhunt.lastRoom',
 };
 
 /* Distance standard: all game settings are in FEET; Leaflet works in METERS. */
@@ -57,7 +57,9 @@ function sanitizeRoom(raw) {
   return raw.trim().toLowerCase().replace(/[.#$[\]/\s]+/g, '-').slice(0, 64);
 }
 
-const ROOM_ID = sanitizeRoom(new URLSearchParams(location.search).get('room')) || DEFAULT_ROOM;
+const ROOM_ID = sanitizeRoom(new URLSearchParams(location.search).get('room'))
+  || sanitizeRoom(localStorage.getItem(LS.lastRoom)) || DEFAULT_ROOM;
+localStorage.setItem(LS.lastRoom, ROOM_ID);
 
 /** Anonymous, persistent player ID — survives reloads so we never duplicate players. */
 function getPlayerId() {
@@ -147,6 +149,16 @@ const el = {
   nameInput: $('name-input'),
   joinBtn: $('join-btn'),
   waitingCount: $('waiting-count'),
+  roomInput: $('room-input'),
+  chatFab: $('chat-fab'),
+  chatBadge: $('chat-badge'),
+  chatPanel: $('chat-panel'),
+  chatTitle: $('chat-title'),
+  chatClose: $('chat-close'),
+  chatTabs: $('chat-tabs'),
+  chatLog: $('chat-log'),
+  chatForm: $('chat-form'),
+  chatInput: $('chat-input'),
   lobbyView: $('lobby-view'),
   lobbyCount: $('lobby-count'),
   playerList: $('player-list'),
@@ -711,6 +723,7 @@ let db, roomRef, stateRef, playersRef, meRef;
 function initFirebase() {
   el.roomName.textContent = ROOM_ID;
   el.nameInput.value = localStorage.getItem(LS.name) || '';
+  el.roomInput.value = ROOM_ID;
 
   if (!isConfigured) {
     el.configWarning.classList.remove('hidden');
@@ -788,6 +801,7 @@ function onRoomSnapshot(snap) {
     Object.entries(v.players || {}).filter(([, p]) => p && typeof p.name === 'string')
   );
   S.loaded = true;
+  renderChat(v.chat);
 
   // Room activity feed (e.g. infection announcements) — toast only new events.
   const feed = Object.entries(v.activity || {}).sort((a, b) => (a[1].ts || 0) - (b[1].ts || 0));
@@ -1168,6 +1182,16 @@ async function joinLobby() {
     toast('🔓 Admin Mode Unlocked');
     return;
   }
+  // Different room code typed → reload pointed at that room (listeners are bound per room).
+  const wantedRoom = sanitizeRoom(el.roomInput.value) || DEFAULT_ROOM;
+  if (wantedRoom !== ROOM_ID) {
+    localStorage.setItem(LS.name, name);
+    localStorage.setItem(LS.lastRoom, wantedRoom);
+    const u = new URL(location.href);
+    u.searchParams.set('room', wantedRoom);
+    location.href = u.toString();
+    return;
+  }
   localStorage.setItem(LS.name, name);
   el.joinBtn.disabled = true;
   el.joinBtn.textContent = 'Joining…';
@@ -1220,6 +1244,7 @@ async function leaveLobby() {
     await meRef.remove();
   } catch (err) { console.error(err); }
   el.lobbyView.classList.add('hidden');
+  renderChat(null);
   el.joinView.classList.remove('hidden');
   P.shown = false;
 }
@@ -1259,6 +1284,7 @@ async function startGame() {
   });
   updates['state/gameMode'] = el.infectionToggle && el.infectionToggle.checked ? 'infection' : 'elimination';
   updates['activity'] = null;
+  updates['chat'] = null;
   updates['state/status'] = STATUS.GRACE;
   updates['state/state'] = STATUS.GRACE;
   updates['state/hunterCount'] = hunters;
@@ -1307,6 +1333,7 @@ async function endGame() {
 async function returnToLobby() {
   if (!isHost()) return;
   const updates = {
+    chat: null,
     'state/status': STATUS.LOBBY,
     'state/state': STATUS.LOBBY,
     'state/startedAt': null,
@@ -2638,8 +2665,144 @@ document.addEventListener('visibilitychange', () => {
 });
 
 /* ---------------------------------------------------------
+   13b. TEAM CHAT
+   Channels: lobby (pre-game, everyone) · hunter · runner.
+   Spectators read both teams and can post to either or to both.
+   --------------------------------------------------------- */
+const CHAT = { open: false, tab: null, data: {}, seenTs: {}, primed: {}, channels: [] };
+const CHAT_LABEL = { lobby: '💬 Lobby Chat', hunter: '🔴 Hunter Chat', runner: '🔵 Runner Chat' };
+
+function chatChannels() {
+  if (!S.joined) return [];
+  if (!isActive()) return ['lobby'];
+  const r = myRole();
+  if (r === 'spectator') return ['both', 'hunter', 'runner'];
+  if (r === 'hunter' || r === 'runner') return [r];
+  return [];
+}
+
+/** Sorted messages for a channel; 'both' merges hunter+runner (deduped by shared key). */
+function chatMessages(ch) {
+  const src = ch === 'both' ? ['hunter', 'runner'] : [ch];
+  const map = new Map();
+  for (const c of src) {
+    for (const [k, m] of Object.entries(CHAT.data[c] || {})) {
+      if (m && typeof m.text === 'string') map.set(k, { ...m, ch: c });
+    }
+  }
+  return [...map.values()].sort((a, b) => (a.ts || 0) - (b.ts || 0)).slice(-100);
+}
+
+function renderChat(chatData) {
+  if (chatData !== undefined) CHAT.data = chatData || {};
+  const channels = chatChannels();
+  CHAT.channels = channels;
+  el.chatFab.classList.toggle('hidden', channels.length === 0);
+  if (!channels.length) {
+    CHAT.open = false;
+    el.chatPanel.classList.add('hidden');
+    return;
+  }
+  if (!channels.includes(CHAT.tab)) CHAT.tab = channels[0];
+
+  // Unread tracking across the real (non-merged) channels.
+  let unread = 0;
+  for (const c of ['lobby', 'hunter', 'runner']) {
+    const msgs = Object.values(CHAT.data[c] || {}).filter((m) => m && typeof m.ts === 'number');
+    const latest = msgs.reduce((mx, m) => Math.max(mx, m.ts), 0);
+    if (!CHAT.primed[c]) { CHAT.primed[c] = true; CHAT.seenTs[c] = latest; continue; }
+    const viewing = CHAT.open && (CHAT.tab === c || CHAT.tab === 'both' && c !== 'lobby');
+    if (viewing) CHAT.seenTs[c] = latest;
+    else if (channels.includes(c) || (channels.includes('both') && c !== 'lobby')) {
+      unread += msgs.filter((m) => m.ts > (CHAT.seenTs[c] || 0) && m.uid !== PLAYER_ID).length;
+    }
+  }
+  el.chatBadge.textContent = unread > 9 ? '9+' : String(unread);
+  el.chatBadge.classList.toggle('hidden', unread === 0);
+
+  el.chatTabs.classList.toggle('hidden', channels.length < 2);
+  el.chatTabs.querySelectorAll('.chat-tab').forEach((b) => b.classList.toggle('active', b.dataset.ch === CHAT.tab));
+  el.chatTitle.textContent = CHAT.tab === 'both'
+    ? '📣 Spectator → Both Teams'
+    : (CHAT_LABEL[CHAT.tab] || 'Chat');
+
+  if (!CHAT.open) return;
+  const nearBottom = el.chatLog.scrollHeight - el.chatLog.scrollTop - el.chatLog.clientHeight < 80;
+  const frag = document.createDocumentFragment();
+  const msgs = chatMessages(CHAT.tab);
+  if (!msgs.length) {
+    const empty = document.createElement('div');
+    empty.className = 'chat-empty';
+    empty.textContent = 'No messages yet — say something!';
+    frag.appendChild(empty);
+  }
+  for (const m of msgs) {
+    const row = document.createElement('div');
+    row.className = `chat-msg chat-${m.role || 'none'}${m.uid === PLAYER_ID ? ' chat-mine' : ''}`;
+    const who = document.createElement('span');
+    who.className = 'chat-who';
+    const tag = m.role === 'spectator' ? '👁️ ' : '';
+    const via = CHAT.tab === 'both' ? ` (${m.ch === 'hunter' ? 'H' : 'R'})` : '';
+    who.textContent = `${tag}${m.name || '?'}${via}`;
+    const txt = document.createElement('span');
+    txt.className = 'chat-text';
+    txt.textContent = m.text;
+    row.append(who, txt);
+    frag.appendChild(row);
+  }
+  el.chatLog.replaceChildren(frag);
+  if (nearBottom || el.chatLog.dataset.fresh !== '0') {
+    el.chatLog.scrollTop = el.chatLog.scrollHeight;
+    el.chatLog.dataset.fresh = '0';
+  }
+}
+
+function setChatOpen(open) {
+  CHAT.open = open && CHAT.channels.length > 0;
+  el.chatPanel.classList.toggle('hidden', !CHAT.open);
+  el.chatFab.classList.toggle('hidden', CHAT.open || CHAT.channels.length === 0);
+  el.chatLog.dataset.fresh = '1';
+  renderChat();
+  if (CHAT.open) setTimeout(() => el.chatInput.focus(), 50);
+}
+
+async function sendChat() {
+  const text = el.chatInput.value.trim().slice(0, 200);
+  if (!text || !S.joined || !CHAT.channels.includes(CHAT.tab) || !roomRef) return;
+  const targets = CHAT.tab === 'both' ? ['hunter', 'runner'] : [CHAT.tab];
+  const key = roomRef.child('chat').push().key;
+  const msg = {
+    uid: PLAYER_ID,
+    name: S.name || me()?.name || 'Player',
+    role: isActive() ? (myRole() || 'none') : 'none',
+    text,
+    ts: Math.round(serverNow()),
+  };
+  const updates = {};
+  targets.forEach((c) => { updates[`chat/${c}/${key}`] = msg; });
+  el.chatInput.value = '';
+  try {
+    await roomRef.update(updates);
+  } catch (err) {
+    console.error(err);
+    toast(`Message failed: ${err.message}`, 'error');
+  }
+}
+
+/* ---------------------------------------------------------
    14. EVENT WIRING
    --------------------------------------------------------- */
+el.chatFab.addEventListener('click', () => setChatOpen(true));
+el.chatClose.addEventListener('click', () => setChatOpen(false));
+el.chatTabs.addEventListener('click', (e) => {
+  const b = e.target.closest('.chat-tab');
+  if (!b) return;
+  CHAT.tab = b.dataset.ch;
+  el.chatLog.dataset.fresh = '1';
+  renderChat();
+});
+el.chatForm.addEventListener('submit', (e) => { e.preventDefault(); sendChat(); });
+el.roomInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') joinLobby(); });
 el.joinBtn.addEventListener('click', joinLobby);
 el.nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') joinLobby(); });
 el.nameInput.addEventListener('animationend', () => el.nameInput.classList.remove('shake'));
