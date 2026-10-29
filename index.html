@@ -22,7 +22,7 @@
   <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
 
-  <link rel="stylesheet" href="style.css?v=10" />
+  <link rel="stylesheet" href="style.css?v=11" />
 </head>
 
 <body>
@@ -266,6 +266,9 @@
 
       <!-- Step 1: Join -->
       <div id="join-view" class="view">
+        <label for="room-input" class="field-label">Room code</label>
+        <input id="room-input" class="text-input" type="text" maxlength="32" autocomplete="off" autocapitalize="none"
+          spellcheck="false" enterkeyhint="go" placeholder="e.g. park-hunt-1" />
         <label for="name-input" class="field-label">Your screen name</label>
         <input id="name-input" class="text-input" type="text" maxlength="20" autocomplete="nickname"
           autocapitalize="words" enterkeyhint="go" placeholder="e.g. Shadow Fox" />
@@ -498,12 +501,33 @@
 
   <div id="toast-stack" class="toast-stack" aria-live="polite"></div>
 
+  <!-- ===== Team chat ===== -->
+  <button id="chat-fab" class="chat-fab hidden" type="button" aria-label="Open chat">💬<span id="chat-badge"
+      class="chat-badge hidden">0</span></button>
+  <section id="chat-panel" class="chat-panel hidden" role="dialog" aria-label="Team chat">
+    <div class="chat-head">
+      <span id="chat-title" class="chat-title">Chat</span>
+      <button id="chat-close" class="chat-close" type="button" aria-label="Close chat">✕</button>
+    </div>
+    <div id="chat-tabs" class="chat-tabs hidden">
+      <button id="chat-tab-both" class="chat-tab" type="button" data-ch="both">📣 Both</button>
+      <button id="chat-tab-hunter" class="chat-tab" type="button" data-ch="hunter">🔴 Hunters</button>
+      <button id="chat-tab-runner" class="chat-tab" type="button" data-ch="runner">🔵 Runners</button>
+    </div>
+    <div id="chat-log" class="chat-log" aria-live="polite"></div>
+    <form id="chat-form" class="chat-form" autocomplete="off">
+      <input id="chat-input" class="chat-input" type="text" maxlength="200" placeholder="Message…"
+        enterkeyhint="send" aria-label="Chat message" />
+      <button id="chat-send" class="chat-send" type="submit">Send</button>
+    </form>
+  </section>
+
   <!-- Libraries -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 
-  <script src="app.js?v=9"></script>
+  <script src="app.js?v=11"></script>
 </body>
 
 </html>
